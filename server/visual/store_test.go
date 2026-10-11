@@ -77,6 +77,23 @@ func TestVisualStoreSharedResourcesAndRestart(t *testing.T) {
 	}
 }
 
+func TestVisualStoreNormalizesResourceMIME(t *testing.T) {
+	store := NewStore(t.TempDir())
+	capture := testCapture("body{color:red}")
+	capture.Resources[0].MIME = `text/css; charset="utf-8"`
+	capture.Resources[1].MIME = `font/woff2; name="quoted\"font"`
+	if err := store.Save(context.Background(), "page", capture); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := store.Read("page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Resources[0].MIME != "text/css" || manifest.Resources[1].MIME != "font/woff2" {
+		t.Fatalf("unnormalized resources: %+v", manifest.Resources)
+	}
+}
+
 func TestVisualStoreConcurrentWrites(t *testing.T) {
 	store := NewStore(t.TempDir())
 	var jobs sync.WaitGroup

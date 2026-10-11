@@ -46,7 +46,6 @@ func validateVisualSubmission(c *webContext, doc *document.Document) (int, error
 	if doc.Visual == nil {
 		return 0, nil
 	}
-	doc.DocumentID = document.GetDocID(doc.UserID, doc.URL)
 	if !c.Config.VisualEnabled(doc.URL, c.effectiveRules()) {
 		doc.Visual = nil
 		return 0, nil
@@ -54,19 +53,26 @@ func validateVisualSubmission(c *webContext, doc *document.Document) (int, error
 	if doc.SkipSensitiveCheck {
 		return 0, nil
 	}
+	sensitiveVisual := false
 	for _, pattern := range c.Config.SensitiveContentPatterns {
 		compiled, err := regexp.Compile(pattern)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
-		if compiled.MatchString(doc.HTML) || compiled.MatchString(doc.Text) || compiled.MatchString(doc.Visual.HTML) {
+		if compiled.MatchString(doc.HTML) || compiled.MatchString(doc.Text) {
 			return http.StatusUnprocessableEntity, document.ErrSensitiveContent
+		}
+		if compiled.MatchString(doc.Visual.HTML) {
+			sensitiveVisual = true
 		}
 		for _, resource := range doc.Visual.Resources {
 			if resource.Kind == "css" && compiled.Match(resource.Data) {
-				return http.StatusUnprocessableEntity, document.ErrSensitiveContent
+				sensitiveVisual = true
 			}
 		}
+	}
+	if sensitiveVisual {
+		doc.Visual = nil
 	}
 	return 0, nil
 }

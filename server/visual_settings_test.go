@@ -104,8 +104,8 @@ func TestVisualSubmissionPolicy(t *testing.T) {
 			if (doc.Visual != nil) != test.want {
 				t.Fatalf("visual retained=%v, want %v", doc.Visual != nil, test.want)
 			}
-			if doc.DocumentID != document.GetDocID(doc.UserID, doc.URL) {
-				t.Fatal("submitted document ID retained")
+			if doc.ID() != document.GetDocID(doc.UserID, doc.URL) {
+				t.Fatal("submitted document ID affected the authoritative ID")
 			}
 		})
 	}
@@ -113,15 +113,24 @@ func TestVisualSubmissionPolicy(t *testing.T) {
 
 func TestProcessedVisualSubmissionChecksSensitiveData(t *testing.T) {
 	cfg := testutil.Config(t)
-	cfg.SensitiveContentPatterns = map[string]string{"test": "secret-value"}
+	cfg.SensitiveContentPatterns = map[string]string{"test": "secret-value", "visual": "visual-marker"}
 	context := &webContext{Config: cfg, Request: httptest.NewRequest(http.MethodPost, "/api/add", nil)}
 	for _, capture := range []*visual.Capture{
 		{HTML: "<p>secret-value</p>"},
 		{Resources: []visual.Asset{{Kind: "css", Data: []byte("secret-value")}}},
 	} {
 		doc := &document.Document{URL: "https://example.com/page", Processed: true, Visual: capture}
-		if status, err := prepareDocumentSubmission(context, doc); status != http.StatusUnprocessableEntity || err != document.ErrSensitiveContent {
+		if status, err := prepareDocumentSubmission(context, doc); status != 0 || err != nil || doc.Visual != nil {
 			t.Fatalf("status=%d err=%v", status, err)
+		}
+	}
+	for _, doc := range []*document.Document{
+		{URL: "https://example.com/page", Processed: true, HTML: "secret-value", Visual: &visual.Capture{HTML: "<p>safe</p>"}},
+		{URL: "https://example.com/page", Processed: true, Text: "secret-value", Visual: &visual.Capture{HTML: "<p>safe</p>"}},
+		{URL: "https://example.com/page", Processed: true, HTML: "secret-value", Visual: &visual.Capture{HTML: "visual-marker"}},
+	} {
+		if status, err := prepareDocumentSubmission(context, doc); status != http.StatusUnprocessableEntity || err != document.ErrSensitiveContent {
+			t.Fatalf("sensitive document accepted: status=%d err=%v", status, err)
 		}
 	}
 }

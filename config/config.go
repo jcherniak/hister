@@ -804,7 +804,10 @@ func (c *Config) init() error {
 	}
 	c.LoadTUIConfig()
 	if err := c.loadVisualSettings(); err != nil {
-		return err
+		c.visualMu.Lock()
+		c.visualModeOverride = "disabled"
+		c.visualMu.Unlock()
+		log.Warn().Err(err).Msg("Invalid visual archive settings; visual capture is disabled")
 	}
 	return c.LoadRules()
 }

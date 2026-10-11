@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -94,7 +95,11 @@ func fetchImage(ctx context.Context, client *http.Client, raw string) ([]byte, s
 	if err != nil {
 		return nil, "", err
 	}
-	request.Header.Set("Accept", "image/avif,image/webp,image/png,image/jpeg,image/gif")
+	accept := "image/webp,image/png,image/jpeg,image/gif"
+	if _, err := exec.LookPath(codecPaths(ctx).decoder); err == nil {
+		accept = "image/avif," + accept
+	}
+	request.Header.Set("Accept", accept)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, "", err

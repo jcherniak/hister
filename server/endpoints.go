@@ -412,8 +412,6 @@ func serveConfig(c *webContext) {
 		DisablePreviews      bool                      `json:"disablePreviews,omitempty"`
 		MaxBatchBodyBytes    int64                     `json:"maxBatchBodyBytes"`
 		Search               searchschema.Capabilities `json:"search"`
-		VisualMode           string                    `json:"visualMode"`
-		VisualSites          map[string]bool           `json:"visualSites"`
 	}
 	authMode := "none"
 	authenticated := true
@@ -431,10 +429,6 @@ func serveConfig(c *webContext) {
 	oauthProviders := make([]string, 0, len(c.Config.Server.OAuth))
 	for name := range c.Config.Server.OAuth {
 		oauthProviders = append(oauthProviders, name)
-	}
-	var visualSites map[string]bool
-	if rules := c.effectiveRules(); rules != nil {
-		visualSites = rules.VisualSites
 	}
 	c.JSON(configResponse{
 		BaseURL:              c.Config.BaseURL(""),
@@ -462,8 +456,6 @@ func serveConfig(c *webContext) {
 		DisablePreviews:      c.Config.App.DisablePreviews,
 		MaxBatchBodyBytes:    c.Config.Server.MaxBatchBodyBytes(),
 		Search:               searchschema.CapabilitiesDefinition(),
-		VisualMode:           c.Config.VisualMode(),
-		VisualSites:          visualSites,
 	})
 }
 

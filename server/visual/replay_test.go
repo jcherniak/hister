@@ -15,7 +15,9 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,6 +71,26 @@ func TestLiveImageFetchValidatesAndFetchesOnce(t *testing.T) {
 		if validLiveURL(value) {
 			t.Errorf("accepted %s", value)
 		}
+	}
+}
+
+func TestLiveImageAcceptUsesAvailableDecoder(t *testing.T) {
+	for _, available := range []bool{false, true} {
+		decoder := filepath.Join(t.TempDir(), "missing-decoder")
+		if available {
+			decoder = os.Args[0]
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if strings.Contains(request.Header.Get("Accept"), "image/avif") != available {
+				t.Errorf("decoder available=%v: accept=%s", available, request.Header.Get("Accept"))
+			}
+			_, _ = writer.Write(pngImage(16, 16))
+		}))
+		ctx := WithCodecs(context.Background(), "", decoder)
+		if _, _, err := fetchImage(ctx, server.Client(), server.URL); err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
 	}
 }
 

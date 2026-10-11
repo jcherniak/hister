@@ -125,6 +125,7 @@ func (store *Store) save(ctx context.Context, id string, capture *Capture, exist
 			continue
 		}
 		seen[asset.URL] = true
+		asset.MIME, _, _ = mime.ParseMediaType(asset.MIME)
 		resource := Resource{URL: asset.URL, MIME: asset.MIME, Kind: asset.Kind, Width: asset.Width, Height: asset.Height}
 		if asset.Kind == "image" {
 			optimized, width, height, err := OptimizeImage(ctx, asset)

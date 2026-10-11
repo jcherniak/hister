@@ -1,9 +1,26 @@
 package config
 
 import (
+	"os"
 	"sync"
 	"testing"
 )
+
+func TestInvalidVisualSettingsDisableCaptureWithoutPreventingStartup(t *testing.T) {
+	for _, contents := range []string{`{`, `{"mode":"invalid"}`} {
+		cfg := CreateDefaultConfig()
+		cfg.App.Directory = t.TempDir()
+		if err := os.WriteFile(cfg.FullPath("visual-settings.json"), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := cfg.init(); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.VisualMode() != "disabled" {
+			t.Fatal("invalid settings enabled visual capture")
+		}
+	}
+}
 
 func TestVisualPolicy(t *testing.T) {
 	rules := &Rules{VisualSites: map[string]bool{"example.com": false, "docs.example.com": true}}

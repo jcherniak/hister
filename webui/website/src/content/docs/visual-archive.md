@@ -19,6 +19,8 @@ Open **Rules → Visual archive** to select the installation mode:
 
 Each site can inherit the installation mode, enable capture, or disable capture. Enter a hostname, not a URL or a wildcard. A hostname setting includes its subdomains. The most specific matching hostname wins. Normal allow, skip, sensitive-content, and access rules still apply. Manual indexing does not override visual archive exclusions.
 
+If a sensitive-content pattern matches only the visual HTML or CSS, Hister omits the visual snapshot and continues normal indexing. A match in the document content still rejects the document. Invalid saved visual settings disable visual capture at startup without preventing normal indexing.
+
 Only an administrator can change the installation mode when user handling is enabled. Site settings belong to the current user. Installation changes from the Rules page are saved in `visual-settings.json` under `app.directory` and take effect without a restart. Site settings are saved with the other indexing rules.
 
 The server configuration supports these settings:
@@ -57,6 +59,8 @@ Half the total pixels means approximately 70.7% of each original dimension, not 
 The server keeps the original when conversion fails, codecs are unavailable, or AVIF is not smaller. SVG and animated images are not recompressed. Unsafe or unreadable raster dimensions are omitted. AVIF validation requires the decoder. The normal searchable document is retained if visual processing fails.
 
 Capture limits are 8 MiB of HTML, 256 resources, 8 MiB per resource, and 24 MiB of decoded capture data. Raster processing limits images to 24 million pixels and 16,384 pixels per dimension. Downloads and codec processes have deadlines. A rejected oversized visual upload is retried once without the visual payload, so normal indexing can continue.
+
+Replay includes only captured, validated resources. Inline data URLs that exceed capture limits or are not included in the resource list are omitted. This prevents unvalidated images from bypassing the processing limits.
 
 Document deletion removes its visual snapshot and resources that no other snapshot references. `hister cleanup` also removes orphaned visual files. Disabling capture does not delete existing files. Include `data/visual/` and `visual-settings.json` in a complete data-directory backup. Normal document export does not include the visual sidecar.
 
