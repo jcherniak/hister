@@ -16,9 +16,11 @@
   import {
     fetchRules,
     saveRuleLists,
+    visualOnlyPatterns,
     type RulesData,
-    type RuleType,
+    type RuleAction,
     type RuleMatchMode,
+    type VisualRuleOption,
   } from '#lib/rules.js';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
@@ -47,7 +49,7 @@
 
   interface RuleRow {
     pattern: string;
-    type: RuleType;
+    type: RuleAction;
     addedOrder: number;
   }
   interface PendingDocumentDeletion {
@@ -86,7 +88,14 @@
     return `${ruleCount(addedCount)} added; skipped ${duplicateMessage}.`;
   }
 
-  let rules: RulesData = $state({ allow: [], skip: [], priority: [], versioning: [], aliases: {} });
+  let rules: RulesData = $state({
+    allow: [],
+    skip: [],
+    priority: [],
+    versioning: [],
+    visual: [],
+    aliases: {},
+  });
   let loading = $state(true);
   let saving = $state(false);
   let message = $state('');
@@ -94,7 +103,8 @@
   let newAliasKeyword = $state('');
   let newAliasValue = $state('');
   let newRulePattern = $state('');
-  let newRuleType: RuleType = $state('skip');
+  let newRuleType: RuleAction = $state('skip');
+  let newVisualOption: VisualRuleOption | '' = $state('');
   let newRuleMode: RuleMatchMode = $state('domain');
   const ruleMatchModes: { mode: RuleMatchMode; label: string }[] = [
     { mode: 'domain', label: 'Domain' },
@@ -119,9 +129,10 @@
   // Editing state for rules
   let editingRuleIndex = $state<number | null>(null);
   let editRulePattern = $state('');
-  let editRuleType: RuleType = $state('skip');
+  let editRuleType: RuleAction = $state('skip');
   let editRuleValid = $state(false);
   let editDeleteMatchingDocuments = $state(false);
+  let editVisualOption: VisualRuleOption | '' = $state('');
 
   // Filter state
   let aliasFilterOpen = $state(false);
@@ -150,12 +161,19 @@
   const ruleSort = new SortState<'pattern' | 'type'>();
 
   const existingRulePatterns = $derived(rules[newRuleType]);
-  const ruleDescriptions: Record<RuleType, string> = {
+  const visualEnabled = $derived(rules.visual_mode === 'opt-in' || rules.visual_mode === 'opt-out');
+  const visualOptions: { value: VisualRuleOption | ''; label: string }[] = [
+    { value: '', label: '--' },
+    { value: 'opt-out', label: 'Opt-out' },
+    { value: 'opt-in', label: 'Opt-in' },
+  ];
+  const ruleDescriptions: Record<RuleAction, string> = {
     skip: 'Skip matching URLs during automatic indexing. Explicit manual saves can bypass this rule.',
     priority: 'Prioritize matching URLs in search results.',
     allow:
       'Allow matching URLs. Once any allow rule exists, other URLs are excluded unless they match another allow rule. Skip rules take precedence.',
     versioning: 'Keep previous versions when matching documents change.',
+    visual: 'Apply the selected visual archive option to matching URLs without changing indexing.',
   };
   const bulkRuleSummary = $derived.by(() =>
     parseRulePatterns(bulkRulePatterns, existingRulePatterns),
@@ -170,6 +188,9 @@
       rows.push({ pattern: p, type: 'priority', addedOrder: addedOrder++ });
     for (const p of rules.versioning)
       rows.push({ pattern: p, type: 'versioning', addedOrder: addedOrder++ });
+    if (visualEnabled)
+      for (const p of rules.visual)
+        rows.push({ pattern: p, type: 'visual', addedOrder: addedOrder++ });
     return rows;
   });
 
@@ -207,6 +228,14 @@
       const vb = col === 'pattern' ? b.row.pattern : b.row.type;
       return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
+  });
+
+  $effect(() => {
+    if (visualEnabled) return;
+    if (newRuleType === 'visual') newRuleType = 'skip';
+    if (editRuleType === 'visual') editRuleType = 'skip';
+    newVisualOption = '';
+    editVisualOption = '';
   });
 
   onMount(async () => {
@@ -253,20 +282,29 @@
     }
   }
 
-  function removeRule(pattern: string, type: RuleType) {
-    void saveRules({ ...rules, [type]: rules[type].filter((p) => p !== pattern) });
+  function removeRule(pattern: string, type: RuleAction) {
+    const nextRules =
+      type === 'visual' ? { ...rules } : { ...rules, [type]: rules[type].filter((p) => p !== pattern) };
+    const visualRules = { ...nextRules.visual_rules };
+    if (type === 'visual' || visualOnlyPatterns(nextRules).includes(pattern)) delete visualRules[pattern];
+    void saveRules({ ...nextRules, visual_rules: visualRules });
   }
 
   function rulesWithPatterns(patterns: string[]): RulesData {
-    return {
-      ...rules,
-      [newRuleType]: [...rules[newRuleType], ...patterns],
-    };
+    const nextRules =
+      newRuleType === 'visual'
+        ? { ...rules }
+        : { ...rules, [newRuleType]: [...rules[newRuleType], ...patterns] };
+    if (!newVisualOption) return nextRules;
+    const visualRules = { ...nextRules.visual_rules };
+    for (const pattern of patterns) visualRules[pattern] = newVisualOption;
+    return { ...nextRules, visual_rules: visualRules };
   }
 
   async function addRule() {
     const pattern = newRulePattern.trim();
     if (!pattern || !newRuleValid || saving) return;
+    if (newRuleType === 'visual' && !newVisualOption) return;
 
     if (existingRulePatterns.includes(pattern)) {
       message = `Rule "${pattern}" already exists.`;
@@ -280,6 +318,7 @@
     newRuleValid = false;
     ruleDraftID++;
     deleteMatchingDocuments = false;
+    newVisualOption = '';
     await deleteMatchesAfterSaving([pattern], shouldDeleteMatches, rulesAddedMessage(1, 0));
   }
 
@@ -291,6 +330,7 @@
 
   async function addBulkRules() {
     const { uniquePatterns, duplicateCount } = bulkRuleSummary;
+    if (newRuleType === 'visual' && !newVisualOption) return;
 
     if (uniquePatterns.length === 0) {
       bulkRulePatterns = '';
@@ -307,6 +347,7 @@
     bulkRulePatterns = '';
     bulkDeleteMatchingDocuments = false;
     bulkAddOpen = false;
+    newVisualOption = '';
     await deleteMatchesAfterSaving(
       uniquePatterns,
       shouldDeleteMatches,
@@ -483,6 +524,7 @@
     editRuleType = row.type;
     editRuleValid = false;
     editDeleteMatchingDocuments = false;
+    editVisualOption = rules.visual_rules?.[row.pattern] ?? '';
   }
 
   function cancelEditRule() {
@@ -490,7 +532,7 @@
     editDeleteMatchingDocuments = false;
   }
 
-  function rulesWithEditedRule(row: RuleRow, pattern: string, type: RuleType): RulesData {
+  function rulesWithEditedRule(row: RuleRow, pattern: string, type: RuleAction): RulesData {
     const nextRules = {
       ...rules,
       allow: [...rules.allow],
@@ -499,10 +541,12 @@
       versioning: [...rules.versioning],
     };
     if (row.type === type) {
-      nextRules[type] = nextRules[type].map((value) => (value === row.pattern ? pattern : value));
+      if (type !== 'visual')
+        nextRules[type] = nextRules[type].map((value) => (value === row.pattern ? pattern : value));
     } else {
-      nextRules[row.type] = nextRules[row.type].filter((value) => value !== row.pattern);
-      nextRules[type].push(pattern);
+      if (row.type !== 'visual')
+        nextRules[row.type] = nextRules[row.type].filter((value) => value !== row.pattern);
+      if (type !== 'visual') nextRules[type].push(pattern);
     }
     return nextRules;
   }
@@ -510,6 +554,7 @@
   async function saveEditRule() {
     const trimmed = editRulePattern.trim();
     if (!trimmed || !editRuleValid || saving) return;
+    if (editRuleType === 'visual' && !editVisualOption) return;
     const row = ruleRows[editingRuleIndex!];
     // Reject duplicate patterns within the selected rule type.
     const isDuplicate =
@@ -524,6 +569,13 @@
     }
     const shouldDeleteMatches = editRuleType === 'skip' && editDeleteMatchingDocuments;
     const nextRules = rulesWithEditedRule(row, trimmed, editRuleType);
+    const visualRules = { ...nextRules.visual_rules };
+    const option = visualEnabled ? editVisualOption : (rules.visual_rules?.[row.pattern] ?? '');
+    if (option) visualRules[trimmed] = option;
+    else delete visualRules[trimmed];
+    if (trimmed !== row.pattern && visualOnlyPatterns(nextRules).includes(row.pattern))
+      delete visualRules[row.pattern];
+    nextRules.visual_rules = visualRules;
     editingRuleIndex = null;
     editDeleteMatchingDocuments = false;
     if (!(await saveRules(nextRules))) return;
@@ -568,10 +620,11 @@
     setFilter: (v: string) => void,
     placeholder: string,
     focusClass: string,
+    colspan: number = 3,
   )}
     {#if open}
       <Table.Row class="bg-muted-surface border-brutal-border border-b-[3px]">
-        <Table.Head colspan={3} class="h-auto px-2 py-2 md:px-5">
+        <Table.Head {colspan} class="h-auto px-2 py-2 md:px-5">
           <div use:focusInput>
             <Input
               type="text"
@@ -928,8 +981,28 @@
                   <option value="priority">Prioritize in search</option>
                   <option value="allow">Allow indexing</option>
                   <option value="versioning">Keep document versions</option>
+                  {#if visualEnabled}
+                    <option value="visual">Visual archive rule only</option>
+                  {/if}
                 </select>
               </div>
+              {#if visualEnabled}
+                <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                  <Label for="rule-visual" class="font-outfit text-text-brand text-sm font-bold"
+                    >Visual archive</Label
+                  >
+                  <select
+                    id="rule-visual"
+                    bind:value={newVisualOption}
+                    disabled={saving}
+                    class="bg-card-surface border-brutal-border font-inter text-text-brand h-10 border-[3px] px-3 text-sm"
+                  >
+                    {#each visualOptions as option}
+                      <option value={option.value}>{option.label}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
               <p id="rule-action-help" class="font-inter text-text-brand-secondary text-sm">
                 {ruleDescriptions[newRuleType]}
               </p>
@@ -951,7 +1024,10 @@
               <Button
                 type="button"
                 onclick={addRule}
-                disabled={saving || !newRuleValid || !newRulePattern.trim()}
+                disabled={saving ||
+                  !newRuleValid ||
+                  !newRulePattern.trim() ||
+                  (newRuleType === 'visual' && !newVisualOption)}
                 class="bg-hister-coral font-space border-brutal-border brutal-press h-10 flex-1 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase md:flex-none"
               >
                 <Plus class="size-4 shrink-0" />
@@ -984,6 +1060,12 @@
                   () => ruleSort.toggle('type'),
                   'font-space text-text-brand-muted h-auto w-20 px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:w-28 md:px-5',
                 )}
+                {#if visualEnabled}
+                  <Table.Head
+                    class="font-space text-text-brand-muted h-auto w-20 px-2 py-3 text-xs font-bold tracking-[1px] uppercase md:w-28 md:px-5"
+                    >Visual archive</Table.Head
+                  >
+                {/if}
                 <Table.Head class="h-auto w-16 px-2 py-3 md:w-20 md:px-5">
                   {@render filterToggleButton('bg-hister-coral text-white', () => {
                     ruleFilterOpen = !ruleFilterOpen;
@@ -997,13 +1079,14 @@
                 (v) => (ruleFilter = v),
                 'Filter rules...',
                 'focus-visible:border-hister-coral',
+                visualEnabled ? 4 : 3,
               )}
             </Table.Header>
             <Table.Body>
               {#each sortedRuleRows as { row, i }}
                 <Table.Row class="border-brutal-border border-b-[3px]">
                   {#if editingRuleIndex === i}
-                    <Table.Cell class="px-2 py-2 md:px-3" colspan={2}>
+                    <Table.Cell class="px-2 py-2 md:px-3" colspan={visualEnabled ? 3 : 2}>
                       <div class="flex flex-col gap-2">
                         {#key row.pattern}
                           <RulePatternEditor
@@ -1035,6 +1118,9 @@
                             <option value="priority">Prioritize in search</option>
                             <option value="allow">Allow indexing</option>
                             <option value="versioning">Keep document versions</option>
+                            {#if visualEnabled}
+                              <option value="visual">Visual archive rule only</option>
+                            {/if}
                           </select>
                         </div>
                         <p
@@ -1043,6 +1129,23 @@
                         >
                           {ruleDescriptions[editRuleType]}
                         </p>
+                        {#if visualEnabled}
+                          <div class="flex items-center gap-2">
+                            <Label for="edit-rule-visual" class="font-outfit text-sm font-bold"
+                              >Visual archive</Label
+                            >
+                            <select
+                              id="edit-rule-visual"
+                              bind:value={editVisualOption}
+                              disabled={saving}
+                              class="bg-card-surface border-brutal-border font-inter text-text-brand h-10 min-w-0 border-[3px] px-2 text-sm"
+                            >
+                              {#each visualOptions as option}
+                                <option value={option.value}>{option.label}</option>
+                              {/each}
+                            </select>
+                          </div>
+                        {/if}
                         {#if editRuleType === 'skip'}
                           <DeleteMatchingDocumentsOption
                             bind:checked={editDeleteMatchingDocuments}
@@ -1054,7 +1157,9 @@
                       {@render editCancelButtons(
                         saveEditRule,
                         cancelEditRule,
-                        saving || !editRuleValid,
+                        saving ||
+                          !editRuleValid ||
+                          (editRuleType === 'visual' && !editVisualOption),
                       )}
                     </Table.Cell>
                   {:else}
@@ -1072,11 +1177,21 @@
                             ? 'bg-hister-indigo text-white'
                             : row.type === 'priority'
                               ? 'bg-hister-teal text-white'
-                              : 'bg-violet-500 text-white'}"
+                              : row.type === 'visual'
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-violet-500 text-white'}"
                       >
                         {row.type}
                       </Badge>
                     </Table.Cell>
+                    {#if visualEnabled}
+                      <Table.Cell
+                        class="font-inter text-text-brand-secondary w-20 px-2 py-3 text-sm md:w-28 md:px-5"
+                        >{rules.visual_rules?.[row.pattern] === 'opt-in'
+                          ? 'Opt-in'
+                          : rules.visual_rules?.[row.pattern] === 'opt-out' ? 'Opt-out' : '--'}</Table.Cell
+                      >
+                    {/if}
                     <Table.Cell class="w-16 px-1 py-3 md:w-20 md:px-3">
                       {@render editDeleteButtons(
                         () => startEditRule(i),
@@ -1114,6 +1229,8 @@
   bind:patterns={bulkRulePatterns}
   bind:ruleType={newRuleType}
   bind:deleteMatches={bulkDeleteMatchingDocuments}
+  {visualEnabled}
+  bind:visualOption={newVisualOption}
   {saving}
   newCount={bulkRuleSummary.uniquePatterns.length}
   duplicateCount={bulkRuleSummary.duplicateCount}

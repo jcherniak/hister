@@ -1254,6 +1254,7 @@ func serveRules(c *webContext) {
 			Aliases    map[string]string `json:"aliases"`
 			VisualMode                string            `json:"visual_mode"`
 			VisualSites               map[string]bool   `json:"visual_sites"`
+			VisualRules               map[string]string `json:"visual_rules"`
 			VisualCanConfigureInstall bool              `json:"visual_can_configure_install"`
 		}
 		allow := []string{}
@@ -1276,7 +1277,7 @@ func serveRules(c *webContext) {
 		if aliases == nil {
 			aliases = make(map[string]string)
 		}
-		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases, VisualMode: c.Config.VisualMode(), VisualSites: rules.VisualSites, VisualCanConfigureInstall: canConfigureVisualInstall(c)})
+		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases, VisualMode: c.Config.VisualMode(), VisualSites: rules.VisualSites, VisualRules: rules.VisualRules, VisualCanConfigureInstall: canConfigureVisualInstall(c)})
 		return
 	}
 	if m != http.MethodPost {
@@ -1320,6 +1321,7 @@ func serveRules(c *webContext) {
 		updates = append(updates, ruleUpdate{patterns: patterns, target: field.target})
 	}
 	rules.VisualSites = visualRules.VisualSites
+	rules.VisualRules = visualRules.VisualRules
 	for _, update := range updates {
 		if *update.target == nil {
 			*update.target = &config.Rule{ReStrs: make([]string, 0)}
@@ -1361,11 +1363,13 @@ type rulePreviewRequest struct {
 	ExactURL          string `json:"exact_url"`
 	IncludeSubdomains bool   `json:"include_subdomains"`
 	URL               string `json:"url"`
+	VisualPolicy      bool   `json:"visual_policy"`
 }
 
 type rulePreviewResponse struct {
 	Pattern string `json:"pattern"`
 	Matches *bool  `json:"matches,omitempty"`
+	VisualEnabled *bool `json:"visual_enabled,omitempty"`
 }
 
 // domainRulePattern matches an HTTP URL's hostname, never its path or query.
@@ -1428,6 +1432,11 @@ func serveRulePreview(c *webContext) {
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Response, c.Request.Body, 64<<10))
 	if err := decoder.Decode(&request); err != nil {
 		http.Error(c.Response, "Invalid rule preview request", http.StatusBadRequest)
+		return
+	}
+	if request.VisualPolicy {
+		enabled := c.Config.VisualEnabled(request.URL, c.effectiveRules())
+		c.JSON(rulePreviewResponse{VisualEnabled: &enabled})
 		return
 	}
 	pattern, domain := strings.TrimSpace(request.Pattern), strings.TrimSpace(request.Domain)

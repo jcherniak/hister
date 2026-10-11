@@ -261,6 +261,7 @@ async function getIndexingRules(
       skip: compilePatterns(data.skip ?? []),
       visual_mode: data.visual_mode,
       visual_sites: data.visual_sites,
+      visual_rules: data.visual_rules,
     };
     indexingRulesCache = { rules, timestamp: now };
     return rules;
@@ -641,20 +642,36 @@ async function submitPageData(baseURL: string, request, sender, data): Promise<I
     tabId !== undefined &&
     !isPageSkipped(pageData.url, sourceURL, rules) &&
     tabSensitiveState.get(tabId) !== sourceURL &&
-    visualCaptureEnabled(sourceURL, rules) &&
-    visualCaptureEnabled(pageData.url, rules)
+    (rules.visual_mode === 'opt-in' || rules.visual_mode === 'opt-out')
   ) {
     try {
-      const response = await chrome.tabs.sendMessage(
-        tabId,
-        { action: 'captureVisual', url: sourceURL },
-        { frameId: sender.frameId ?? 0 },
-      );
-      if (response?.visual) {
-        pageData.visual = await completeVisualCapture(response.visual);
-        pageData.visual.resources = pageData.visual.resources.filter(
-          (asset: VisualAsset) => asset.data,
+      let enabled: boolean;
+      if (Object.keys(rules.visual_rules ?? {}).length > 0) {
+        const checks = await Promise.all(
+          [...new Set([sourceURL, pageData.url])].map(async (url) => {
+            const response = await fetchAPI(baseURL + 'api/rules/preview', {
+              body: { visual_policy: true, url },
+              customHeaders: getCustomHeaders(data),
+            });
+            return response.ok && (await response.json()).visual_enabled === true;
+          }),
         );
+        enabled = checks.every(Boolean);
+      } else {
+        enabled = visualCaptureEnabled(sourceURL, rules) && visualCaptureEnabled(pageData.url, rules);
+      }
+      if (enabled) {
+        const response = await chrome.tabs.sendMessage(
+          tabId,
+          { action: 'captureVisual', url: sourceURL },
+          { frameId: sender.frameId ?? 0 },
+        );
+        if (response?.visual) {
+          pageData.visual = await completeVisualCapture(response.visual);
+          pageData.visual.resources = pageData.visual.resources.filter(
+            (asset: VisualAsset) => asset.data,
+          );
+        }
       }
     } catch (_) {}
   }

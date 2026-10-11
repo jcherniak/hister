@@ -1,13 +1,10 @@
 <script lang="ts">
   import { saveVisualSettings, type RulesData } from '#lib/rules.js';
   import { Button } from '@hister/components/ui/button';
-  import { Input } from '@hister/components/ui/input';
   import * as Card from '@hister/components/ui/card';
 
   let { rules, onSaved }: { rules: RulesData; onSaved: () => Promise<void> } = $props();
   let visualMode: 'disabled' | 'opt-in' | 'opt-out' = $state('opt-out');
-  let visualHost = $state('');
-  let visualSiteEnabled = $state('true');
   let saving = $state(false);
   let message = $state('');
   let isError = $state(false);
@@ -30,21 +27,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  async function saveVisualSite(event: SubmitEvent) {
-    event.preventDefault();
-    const host = visualHost.trim().toLowerCase();
-    if (!host) return;
-    await saveVisual({
-      visual_sites: { ...rules.visual_sites, [host]: visualSiteEnabled === 'true' },
-    });
-  }
-
-  function removeVisualSite(host: string) {
-    const sites = { ...rules.visual_sites };
-    delete sites[host];
-    void saveVisual({ visual_sites: sites });
   }
 </script>
 
@@ -92,41 +74,9 @@
         capture.
       </p>{/if}
     <p class="text-sm">
-      Site settings apply to the hostname and its subdomains. The most specific hostname wins.
-      Remove a setting to use its parent setting or the installation mode.
+      Opt sites in or out with the Visual archive option on indexing rules. A rule can also apply
+      only to the visual archive without changing indexing.
     </p>
-    <form onsubmit={saveVisualSite} class="flex flex-wrap items-end gap-3">
-      <label class="flex flex-col gap-1 text-sm font-bold" for="visual-host"
-        >Hostname
-        <Input
-          id="visual-host"
-          bind:value={visualHost}
-          placeholder="example.com"
-          required
-          disabled={saving}
-        />
-      </label>
-      <label class="flex flex-col gap-1 text-sm font-bold" for="visual-site-enabled"
-        >Visual capture
-        <select
-          id="visual-site-enabled"
-          bind:value={visualSiteEnabled}
-          disabled={saving}
-          class="border-brutal-border bg-card-surface border-2 p-2"
-          ><option value="true">Enabled</option><option value="false">Disabled</option></select
-        >
-      </label>
-      <Button type="submit" disabled={saving || !visualHost.trim()}>Save site</Button>
-    </form>
-    {#each Object.entries(rules.visual_sites ?? {}).sort( ([first], [second]) => first.localeCompare(second) ) as [host, enabled] (host)}
-      <div class="flex flex-wrap items-center gap-3 text-sm">
-        <code>{host}</code><span>{enabled ? 'Enabled' : 'Disabled'}</span><Button
-          variant="outline"
-          disabled={saving}
-          onclick={() => removeVisualSite(host)}>Use default</Button
-        >
-      </div>
-    {/each}
     {#if message}<p role="status" class:text-red-600={isError}>{message}</p>{/if}
   </Card.Content>
 </Card.Root>

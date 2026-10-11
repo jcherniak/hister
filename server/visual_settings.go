@@ -39,6 +39,17 @@ func parseVisualSettings(c *webContext, form url.Values, rules *config.Rules) (s
 		}
 		rules.VisualSites = normalized
 	}
+	if form.Has("visual_rules") {
+		var visualRules map[string]string
+		if err := json.Unmarshal([]byte(form.Get("visual_rules")), &visualRules); err != nil {
+			return "", http.StatusBadRequest, err
+		}
+		normalized, err := config.NormalizeVisualRules(visualRules)
+		if err != nil {
+			return "", http.StatusBadRequest, err
+		}
+		rules.VisualRules = normalized
+	}
 	return mode, 0, nil
 }
 

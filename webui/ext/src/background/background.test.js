@@ -31,11 +31,14 @@ function browser({
     color_scheme: 'light',
   },
   submissionStatuses = [],
+  visualPolicy = () => true,
+  policyStatus = 200,
 } = {}) {
   const canonicalURL = 'https://example.com/clean';
   const documents = [];
   const lookups = [];
   const captures = [];
+  const policyChecks = [];
   let onMessage;
   let onActivated;
   let onHeadersReceived;
@@ -105,6 +108,12 @@ function browser({
       const parsed = new URL(url);
       if (parsed.protocol === 'chrome-extension:') throw new Error('No icon in test');
       if (parsed.pathname === '/api/rules') return Response.json(rules);
+      if (parsed.pathname === '/api/rules/preview') {
+        const request = JSON.parse(options.body);
+        assert.equal(request.visual_policy, true);
+        policyChecks.push(request.url);
+        return Response.json({ visual_enabled: visualPolicy(request.url) }, { status: policyStatus });
+      }
       if (parsed.pathname === '/api/add') {
         documents.push(JSON.parse(options.body));
         return new Response('', { status: submissionStatuses[documents.length - 1] ?? 201 });
@@ -126,6 +135,7 @@ function browser({
     documents,
     lookups,
     captures,
+    policyChecks,
     message,
     activate: () => onActivated({ tabId: 1 }),
     respond: (statusCode, url = sourceURL, tabId = 1) =>
@@ -160,6 +170,36 @@ test('manual indexing never overrides visual exclusions', async () => {
   assert.equal((await b.submit(true)).status_code, 201);
   assert.equal(b.captures.length, 0);
   assert.equal(b.documents[0].visual, undefined);
+});
+
+test('visual pattern rules use the server matcher for visited and canonical URLs', async () => {
+  for (const excluded of [undefined, '/visited', '/clean']) {
+    const b = browser({
+      rules: { visual_mode: 'opt-in', visual_rules: { '(?i)example': 'opt-in' } },
+      visualPolicy: (url) => !excluded || !url.includes(excluded),
+    });
+    assert.equal((await b.submit()).status_code, 201);
+    assert.deepEqual(b.policyChecks.sort(), [b.sourceURL, b.canonicalURL].sort());
+    assert.equal(b.captures.length, excluded ? 0 : 1);
+    assert.equal(b.documents[0].text, 'Article text');
+  }
+});
+
+test('failed visual pattern policy checks omit capture but keep normal indexing', async () => {
+  const b = browser({
+    rules: { visual_mode: 'opt-out', visual_rules: { '(?i)private': 'opt-out' } },
+    policyStatus: 500,
+  });
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.captures.length, 0);
+  assert.equal(b.documents[0].visual, undefined);
+});
+
+test('installation disable prevents visual policy checks and capture', async () => {
+  const b = browser({ rules: { visual_mode: 'disabled', visual_rules: { 'example': 'opt-in' } } });
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.policyChecks.length, 0);
+  assert.equal(b.captures.length, 0);
 });
 
 test('failed visual capture does not stop normal indexing', async () => {

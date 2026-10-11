@@ -69,6 +69,55 @@ func TestVisualInstallationAuthorization(t *testing.T) {
 	}
 }
 
+func TestVisualPatternRulesAPI(t *testing.T) {
+	cfg, handler := newTokenTestServer(t, false)
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "hister://", "X-Access-Token": "secret"}
+	form := url.Values{"visual_mode": {"opt-in"}, "visual_rules": {`{"(?i)^https://example\\.com/":"opt-in","/private":"opt-out"}`}}
+	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/rules", strings.NewReader(form.Encode()), headers)
+	if rec.Code != http.StatusOK || !cfg.VisualEnabled("https://EXAMPLE.COM/public", nil) || cfg.VisualEnabled("https://example.com/private", nil) {
+		t.Fatalf("visual-only rules failed: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if cfg.Rules.Count() != 0 {
+		t.Fatal("visual-only rules changed indexing rules")
+	}
+	for _, invalid := range []url.Values{
+		{"visual_rules": {`{"example":"opt-out"}`}, "skip": {"["}},
+		{"visual_rules": {`{"[":"opt-in"}`}},
+		{"visual_rules": {`{"example":"--"}`}},
+	} {
+		rec = testutil.ServeHTTP(t, handler, http.MethodPost, "/api/rules", strings.NewReader(invalid.Encode()), headers)
+		if rec.Code != http.StatusBadRequest || len(cfg.Rules.VisualRules) != 2 || !cfg.VisualEnabled("https://example.com/public", nil) {
+			t.Fatalf("invalid rule save changed policy: status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+	rec = testutil.ServeHTTP(t, handler, http.MethodPost, "/api/rules", strings.NewReader(url.Values{"priority": {"example"}}.Encode()), headers)
+	if rec.Code != http.StatusOK || len(cfg.Rules.VisualRules) != 2 {
+		t.Fatal("normal rule save discarded visual rules")
+	}
+	for _, test := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://EXAMPLE.COM/public", true}, {"https://example.com/private", false}, {"https://other.test", false},
+	} {
+		body, err := json.Marshal(map[string]any{"visual_policy": true, "url": test.url})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec = testutil.ServeHTTP(t, handler, http.MethodPost, "/api/rules/preview", strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json", "Origin": "hister://", "X-Access-Token": "secret"})
+		var response struct {
+			Enabled *bool `json:"visual_enabled"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || rec.Code != http.StatusOK || response.Enabled == nil || *response.Enabled != test.want {
+			t.Fatalf("policy check %s: status=%d body=%s err=%v", test.url, rec.Code, rec.Body.String(), err)
+		}
+	}
+	cfg.VisualArchive.Mode = "disabled"
+	if cfg.VisualEnabled("https://example.com/public", nil) {
+		t.Fatal("saved opt-in bypassed installation disable")
+	}
+}
+
 func TestVisualSubmissionPolicy(t *testing.T) {
 	for _, test := range []struct {
 		name            string

@@ -221,6 +221,8 @@ type Rules struct {
 	Versioning *Rule   `json:"versioning"`
 	Aliases    Aliases `json:"aliases"`
 	VisualSites map[string]bool `json:"visual_sites,omitempty"`
+	VisualRules map[string]string `json:"visual_rules,omitempty"`
+	visualPatterns map[string]*regexp.Regexp
 }
 
 type Rule struct {
@@ -1274,6 +1276,18 @@ func (r *Rules) Compile() error {
 		return err
 	}
 	r.VisualSites = sites
+	visualRules, err := NormalizeVisualRules(r.VisualRules)
+	if err != nil {
+		return err
+	}
+	r.VisualRules = visualRules
+	r.visualPatterns = make(map[string]*regexp.Regexp, len(visualRules))
+	for pattern := range visualRules {
+		r.visualPatterns[pattern], err = regexp.Compile(pattern)
+		if err != nil {
+			return err
+		}
+	}
 	for _, rule := range []*Rule{r.Allow, r.Skip, r.Priority, r.Versioning} {
 		if rule != nil {
 			if err := rule.Compile(); err != nil {

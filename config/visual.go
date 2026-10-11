@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -42,6 +43,26 @@ func NormalizeVisualSites(sites map[string]bool) (map[string]bool, error) {
 			return nil, fmt.Errorf("conflicting visual archive settings for %s", host)
 		}
 		normalized[host] = enabled
+	}
+	return normalized, nil
+}
+
+func NormalizeVisualRules(rules map[string]string) (map[string]string, error) {
+	if len(rules) > 1000 {
+		return nil, errors.New("too many visual archive rules")
+	}
+	normalized := make(map[string]string, len(rules))
+	for pattern, mode := range rules {
+		if mode != "opt-in" && mode != "opt-out" {
+			return nil, errors.New("visual archive rules must be opt-in or opt-out")
+		}
+		if len(strings.Fields(pattern)) != 1 || strings.TrimSpace(pattern) != pattern {
+			return nil, errors.New("visual archive rules require one pattern without spaces")
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return nil, fmt.Errorf("invalid visual archive pattern: %w", err)
+		}
+		normalized[pattern] = mode
 	}
 	return normalized, nil
 }
@@ -105,6 +126,27 @@ func (c *Config) VisualEnabled(pageURL string, rules *Rules) bool {
 	}
 	if rules != nil && rules.IsSkip(pageURL) {
 		return false
+	}
+	optIn := false
+	if rules != nil {
+		for pattern, ruleMode := range rules.VisualRules {
+			compiled := rules.visualPatterns[pattern]
+			if compiled == nil {
+				compiled, err = regexp.Compile(pattern)
+				if err != nil {
+					return false
+				}
+			}
+			if compiled.MatchString(pageURL) {
+				if ruleMode == "opt-out" {
+					return false
+				}
+				optIn = optIn || ruleMode == "opt-in"
+			}
+		}
+	}
+	if optIn {
+		return true
 	}
 	for candidate := host; candidate != ""; {
 		if rules != nil {

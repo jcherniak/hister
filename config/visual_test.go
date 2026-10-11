@@ -66,6 +66,64 @@ func TestVisualSitesValidation(t *testing.T) {
 	}
 }
 
+func TestVisualPatternPolicy(t *testing.T) {
+	rules := &Rules{VisualRules: map[string]string{
+		`(?i)^https?://([a-z0-9-]+\.)*example\.com(:[0-9]+)?(/|$)`: "opt-in",
+		`/private(/|$)`:                    "opt-out",
+		`^https://other\.test/only\?id=1$`: "opt-in",
+	}}
+	if err := rules.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := CreateDefaultConfig()
+	cfg.VisualArchive.Mode = "opt-in"
+	for _, test := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://docs.example.com/public", true},
+		{"https://EXAMPLE.COM/public", true},
+		{"https://example.com/private/article", false},
+		{"https://other.test/only?id=1", true},
+		{"https://other.test/only?id=2", false},
+		{"https://notexample.com/public", false},
+		{"https://other.test/path/example.com", false},
+	} {
+		if got := cfg.VisualEnabled(test.url, rules); got != test.want {
+			t.Errorf("%s: enabled=%v, want %v", test.url, got, test.want)
+		}
+	}
+	if rules.Count() != 0 {
+		t.Fatal("visual-only rules changed indexing rule count")
+	}
+	rules.Skip = &Rule{ReStrs: []string{"/public"}}
+	if err := rules.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VisualEnabled("https://example.com/public", rules) {
+		t.Fatal("visual opt-in bypassed skip")
+	}
+	cfg.VisualArchive.Mode = "disabled"
+	if cfg.VisualEnabled("https://example.com/other", rules) {
+		t.Fatal("visual opt-in bypassed installation disable")
+	}
+	cfg.VisualArchive.Mode = "opt-out"
+	if !cfg.VisualEnabled("https://unmatched.test", rules) {
+		t.Fatal("unmatched rules did not inherit opt-out installation mode")
+	}
+}
+
+func TestVisualPatternValidation(t *testing.T) {
+	for _, rules := range []map[string]string{
+		{"[": "opt-out"}, {"": "opt-in"}, {"a b": "opt-in"}, {" a": "opt-in"},
+		{"example": "--"}, {"example": "disabled"},
+	} {
+		if _, err := NormalizeVisualRules(rules); err == nil {
+			t.Errorf("accepted invalid visual rules: %v", rules)
+		}
+	}
+}
+
 func TestVisualModePersistenceAndHardDisable(t *testing.T) {
 	cfg := CreateDefaultConfig()
 	cfg.App.Directory = t.TempDir()
@@ -96,12 +154,15 @@ func TestVisualModePersistenceAndHardDisable(t *testing.T) {
 func TestVisualRulesPersistence(t *testing.T) {
 	cfg := CreateDefaultConfig()
 	cfg.App.Directory = t.TempDir()
-	cfg.Rules = &Rules{VisualSites: map[string]bool{"example.com": true}}
+	cfg.Rules = &Rules{VisualSites: map[string]bool{"example.com": true}, VisualRules: map[string]string{`/private`: "opt-out"}}
 	if err := cfg.SaveRules(); err != nil {
 		t.Fatal(err)
 	}
 	if !cfg.VisualEnabled("https://example.com", nil) {
 		t.Fatal("saved visual site setting was not loaded")
+	}
+	if cfg.VisualEnabled("https://example.com/private", nil) || cfg.Rules.VisualRules[`/private`] != "opt-out" {
+		t.Fatal("saved visual pattern setting was not loaded")
 	}
 	var workers sync.WaitGroup
 	for worker := 0; worker < 4; worker++ {

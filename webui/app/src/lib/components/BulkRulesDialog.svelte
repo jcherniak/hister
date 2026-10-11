@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '@hister/components/ui/button';
   import DeleteMatchingDocumentsOption from '#lib/components/DeleteMatchingDocumentsOption.svelte';
-  import type { RuleType } from '#lib/rules.js';
+  import type { RuleAction, VisualRuleOption } from '#lib/rules.js';
   import * as Dialog from '@hister/components/ui/dialog';
   import { Label } from '@hister/components/ui/label';
   import { Textarea } from '@hister/components/ui/textarea';
@@ -10,8 +10,10 @@
   interface Props {
     open: boolean;
     patterns: string;
-    ruleType: RuleType;
+    ruleType: RuleAction;
     deleteMatches: boolean;
+    visualEnabled?: boolean;
+    visualOption: VisualRuleOption | '';
     saving: boolean;
     newCount: number;
     duplicateCount: number;
@@ -23,6 +25,8 @@
     patterns = $bindable(),
     ruleType = $bindable(),
     deleteMatches = $bindable(),
+    visualEnabled = false,
+    visualOption = $bindable(),
     saving,
     newCount,
     duplicateCount,
@@ -91,7 +95,7 @@
           id="bulk-rule-type"
           value={ruleType}
           onchange={(event) => {
-            ruleType = (event.currentTarget as HTMLSelectElement).value as RuleType;
+            ruleType = (event.currentTarget as HTMLSelectElement).value as RuleAction;
             if (ruleType !== 'skip') deleteMatches = false;
           }}
           class="bg-page-bg border-brutal-border font-space text-text-brand h-10 w-full cursor-pointer appearance-none border-[3px] px-3 text-xs font-bold tracking-[0.5px] outline-none"
@@ -100,8 +104,28 @@
           <option value="skip">SKIP</option>
           <option value="priority">PRIORITY</option>
           <option value="versioning">VERSION</option>
+          {#if visualEnabled}
+            <option value="visual">VISUAL ARCHIVE</option>
+          {/if}
         </select>
       </div>
+
+      {#if visualEnabled}
+        <div class="space-y-1.5">
+          <Label for="bulk-rule-visual" class="font-outfit text-text-brand text-sm font-bold"
+            >Visual archive</Label
+          >
+          <select
+            id="bulk-rule-visual"
+            bind:value={visualOption}
+            class="bg-page-bg border-brutal-border font-space text-text-brand h-10 w-full cursor-pointer appearance-none border-[3px] px-3 text-xs font-bold tracking-[0.5px] outline-none"
+          >
+            <option value="">--</option>
+            <option value="opt-out">Opt-out</option>
+            <option value="opt-in">Opt-in</option>
+          </select>
+        </div>
+      {/if}
 
       {#if ruleType === 'skip'}
         <DeleteMatchingDocumentsOption bind:checked={deleteMatches} />
@@ -117,7 +141,7 @@
       <Button
         type="button"
         onclick={onAdd}
-        disabled={saving || !patterns.trim()}
+        disabled={saving || !patterns.trim() || (ruleType === 'visual' && !visualOption)}
         class="bg-hister-coral font-space border-brutal-border brutal-press h-9 gap-2 rounded-none border-[3px] px-4 text-xs font-bold tracking-[0.5px] text-white uppercase"
       >
         <Plus class="size-4" />

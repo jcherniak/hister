@@ -7,21 +7,25 @@ description: 'Save optional rendered page snapshots with CSS and shared resource
 
 The browser extension can save a separate visual snapshot of a page after JavaScript renders it. Search continues to use the normal document text and HTML. Visual HTML, stylesheets, images, and fonts do not enter the search index.
 
-## Installation and Site Settings
+## Installation and Rule Settings
 
 Open **Rules → Visual archive** to select the installation mode:
 
 | Mode       | Behavior                                                                                      |
 | ---------- | --------------------------------------------------------------------------------------------- |
 | `disabled` | Stop visual capture and visual replay for all sites. Site settings cannot override this mode. |
-| `opt-in`   | Capture only sites with an enabled site setting.                                              |
-| `opt-out`  | Capture all eligible sites except sites with a disabled site setting. This is the default.    |
+| `opt-in`   | Capture only URLs with a matching opt-in rule.                                                |
+| `opt-out`  | Capture all eligible URLs except URLs with a matching opt-out rule. This is the default.      |
 
-Each site can inherit the installation mode, enable capture, or disable capture. Enter a hostname, not a URL or a wildcard. A hostname setting includes its subdomains. The most specific matching hostname wins. Normal allow, skip, sensitive-content, and access rules still apply. Manual indexing does not override visual archive exclusions.
+Use the normal rule builder to select a domain, an exact URL, or an advanced Go regexp. Domain rules can include subdomains. Each rule has a **Visual archive** setting: `--` inherits the installation mode, `opt-in` enables capture, and `opt-out` disables capture. If opt-in and opt-out rules both match, opt-out takes precedence. Select **Visual archive rule only** to change capture without changing indexing. The same URL test, edit, delete, and bulk operations apply. Visual controls are hidden when the feature is disabled; saved settings are retained.
+
+Normal allow, skip, sensitive-content, and access rules still apply. Manual indexing does not override visual archive exclusions. The extension checks both the visited URL and the canonical URL. Visual patterns use the server's Go regexp matcher, including syntax that JavaScript does not support.
+
+Older `visual_sites` hostname settings remain readable as a fallback when no visual pattern matches. New rules take precedence over these legacy settings. Identical patterns used for multiple indexing actions share one visual setting.
 
 If a sensitive-content pattern matches only the visual HTML or CSS, Hister omits the visual snapshot and continues normal indexing. A match in the document content still rejects the document. Invalid saved visual settings disable visual capture at startup without preventing normal indexing.
 
-Only an administrator can change the installation mode when user handling is enabled. Site settings belong to the current user. Installation changes from the Rules page are saved in `visual-settings.json` under `app.directory` and take effect without a restart. Site settings are saved with the other indexing rules.
+Only an administrator can change the installation mode when user handling is enabled. Rule settings belong to the current user. Installation changes from the Rules page are saved in `visual-settings.json` under `app.directory` and take effect without a restart. Visual rules are saved with the other indexing rules as `visual_rules`.
 
 The server configuration supports these settings:
 
@@ -44,7 +48,7 @@ Fonts share the same resource store across all sites, even when their source URL
 
 The visual archive is stored in `data/visual/`, separately from `data/html/` and the search index. Each document has one latest visual snapshot. A new visual capture replaces the previous snapshot. A submission without a visual capture leaves the previous snapshot in place. The display shows its capture time. Historical text/HTML versions do not have visual snapshots.
 
-New normal HTML previews, visual HTML, and CSS use Zstandard. Existing gzip previews remain readable and are not converted. The portable Go encoder selects the profile nearest to Zstandard level 9; its output is not identical to the native `zstd -9` benchmark. Images and fonts do not receive another outer compression layer.
+Visual HTML and CSS use Zstandard. Normal HTML previews use the installation's `compression.algorithm` setting. Existing gzip and Zstandard previews remain readable. Historical conversion is optional and disabled by default. The portable Go encoder selects the profile nearest to Zstandard level 9; its output is not identical to the native `zstd -9` benchmark. Images and fonts do not receive another outer compression layer.
 
 With `avifenc` and `avifdec` installed, supported still raster images use this policy:
 

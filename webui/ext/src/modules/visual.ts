@@ -18,6 +18,7 @@ export type VisualCapture = {
 export type VisualPolicy = {
   visual_mode?: string;
   visual_sites?: Record<string, boolean>;
+  visual_rules?: Record<string, 'opt-in' | 'opt-out'>;
 };
 
 const maxAssets = 256;
