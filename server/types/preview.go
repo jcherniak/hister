@@ -19,6 +19,7 @@ type PreviewDocumentDetails struct {
 // DocumentPreviewResponse is the API response for a rendered document
 // preview and its searchable properties.
 type DocumentPreviewResponse struct {
+	VisualAvailable  bool                   `json:"visual_available,omitempty"`
 	Title            string                 `json:"title"`
 	Content          string                 `json:"content"`
 	Template         string                 `json:"template"`

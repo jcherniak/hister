@@ -25,7 +25,7 @@ func prepareDocumentSubmission(c *webContext, d *document.Document) (int, error)
 		return http.StatusNotAcceptable, errors.New("url skipped by rules")
 	}
 	d.UserID = submittedDocumentUserID(c)
-	return 0, nil
+	return validateVisualSubmission(c, d)
 }
 
 // shouldSkipSubmission checks URL allow and skip rules unless the document carries an

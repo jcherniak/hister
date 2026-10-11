@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 export const original = 'https://example.com/article';
 export const preview = {
@@ -16,7 +16,7 @@ export function previewPath(url = original, version?: number) {
 }
 
 export async function mockAPI(
-  page: Page,
+  page: Page | BrowserContext,
   options: { canWrite?: boolean; historyResult?: boolean; pinned?: boolean } = {},
 ) {
   const result = {

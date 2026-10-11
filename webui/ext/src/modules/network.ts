@@ -1,3 +1,5 @@
+import { fitVisualCapture } from './visual';
+
 const FETCHABLE_FAVICON_PROTOCOLS = new Set(['http:', 'https:']);
 
 function isFetchableFaviconURL(rawURL: string): boolean {
@@ -173,7 +175,13 @@ async function sendPageData(url, doc, customHeaders = []) {
   } catch (e) {
     doc['favicon'] = '';
   }
-  return sendResult(url, doc, customHeaders);
+  fitVisualCapture(doc);
+  const response = await sendResult(url, doc, customHeaders);
+  if (doc.visual && (response.status === 413 || response.status === 429)) {
+    delete doc.visual;
+    return sendResult(url, doc, customHeaders);
+  }
+  return response;
 }
 
 async function sendResult(url, res, customHeaders = []) {

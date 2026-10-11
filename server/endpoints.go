@@ -1252,6 +1252,11 @@ func serveRules(c *webContext) {
 			Priority   []string          `json:"priority"`
 			Versioning []string          `json:"versioning"`
 			Aliases    map[string]string `json:"aliases"`
+
+			VisualMode                string            `json:"visual_mode"`
+			VisualSites               map[string]bool   `json:"visual_sites"`
+			VisualRules               map[string]string `json:"visual_rules"`
+			VisualCanConfigureInstall bool              `json:"visual_can_configure_install"`
 		}
 		allow := []string{}
 		if rules.Allow != nil && rules.Allow.ReStrs != nil {
@@ -1273,7 +1278,7 @@ func serveRules(c *webContext) {
 		if aliases == nil {
 			aliases = make(map[string]string)
 		}
-		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases})
+		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases, VisualMode: c.Config.VisualMode(), VisualSites: rules.VisualSites, VisualRules: rules.VisualRules, VisualCanConfigureInstall: canConfigureVisualInstall(c)})
 		return
 	}
 	if m != http.MethodPost {
@@ -1286,6 +1291,12 @@ func serveRules(c *webContext) {
 		return
 	}
 	f := c.Request.PostForm
+	visualRules := *rules
+	visualMode, status, visualErr := parseVisualSettings(c, f, &visualRules)
+	if visualErr != nil {
+		http.Error(c.Response, visualErr.Error(), status)
+		return
+	}
 	type ruleUpdate struct {
 		patterns []string
 		target   **config.Rule
@@ -1310,6 +1321,8 @@ func serveRules(c *webContext) {
 		}
 		updates = append(updates, ruleUpdate{patterns: patterns, target: field.target})
 	}
+	rules.VisualSites = visualRules.VisualSites
+	rules.VisualRules = visualRules.VisualRules
 	for _, update := range updates {
 		if *update.target == nil {
 			*update.target = &config.Rule{ReStrs: make([]string, 0)}
@@ -1335,6 +1348,13 @@ func serveRules(c *webContext) {
 			return
 		}
 	}
+	if visualMode != "" {
+		if err := c.Config.SetVisualMode(visualMode); err != nil {
+			log.Error().Err(err).Msg("failed to save visual archive mode")
+			serve500(c)
+			return
+		}
+	}
 	serve200(c)
 }
 
@@ -1344,11 +1364,14 @@ type rulePreviewRequest struct {
 	ExactURL          string `json:"exact_url"`
 	IncludeSubdomains bool   `json:"include_subdomains"`
 	URL               string `json:"url"`
+	VisualPolicy      bool   `json:"visual_policy"`
 }
 
 type rulePreviewResponse struct {
 	Pattern string `json:"pattern"`
 	Matches *bool  `json:"matches,omitempty"`
+
+	VisualEnabled *bool `json:"visual_enabled,omitempty"`
 }
 
 // domainRulePattern matches an HTTP URL's hostname, never its path or query.
@@ -1411,6 +1434,11 @@ func serveRulePreview(c *webContext) {
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Response, c.Request.Body, 64<<10))
 	if err := decoder.Decode(&request); err != nil {
 		http.Error(c.Response, "Invalid rule preview request", http.StatusBadRequest)
+		return
+	}
+	if request.VisualPolicy {
+		enabled := c.Config.VisualEnabled(request.URL, c.effectiveRules())
+		c.JSON(rulePreviewResponse{VisualEnabled: &enabled})
 		return
 	}
 	pattern, domain := strings.TrimSpace(request.Pattern), strings.TrimSpace(request.Domain)
@@ -1595,6 +1623,10 @@ func servePreview(c *webContext) {
 	if viewingVersionID > 0 {
 		payload.VersionID = viewingVersionID
 		payload.VersionCreatedAt = &viewingVersionCreatedAt
+	}
+	if versionIDStr == "" && c.Config.VisualEnabled(u, c.effectiveRules()) {
+		manifest, visualErr := c.Indexer.ReadVisual(document.GetDocID(doc.UserID, doc.URL))
+		payload.VisualAvailable = visualErr == nil && manifest != nil
 	}
 	if versionCount, err := model.CountDocumentVersions(u, doc.UserID); err == nil && versionCount > 0 {
 		payload.VersionCount = versionCount

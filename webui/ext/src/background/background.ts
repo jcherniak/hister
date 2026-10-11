@@ -1,4 +1,10 @@
 import { fetchAPI, sendPageData, sendPDFData, sendResult } from '../modules/network';
+import {
+  completeVisualCapture,
+  visualCaptureEnabled,
+  type VisualPolicy,
+  type VisualAsset,
+} from '../modules/visual';
 import { ensureDefaultServerURL } from '../modules/settings';
 import { getTabPageURL } from '../modules/tabs';
 
@@ -202,7 +208,7 @@ chrome.webRequest?.onHeadersReceived.addListener(
 
 // --- Indexing rules cache ---
 
-interface IndexingRules {
+interface IndexingRules extends VisualPolicy {
   allow: (RegExp | null)[];
   skip: (RegExp | null)[];
 }
@@ -253,6 +259,9 @@ async function getIndexingRules(
     const rules = {
       allow: compilePatterns(data.allow ?? []),
       skip: compilePatterns(data.skip ?? []),
+      visual_mode: data.visual_mode,
+      visual_sites: data.visual_sites,
+      visual_rules: data.visual_rules,
     };
     indexingRulesCache = { rules, timestamp: now };
     return rules;
@@ -610,17 +619,17 @@ function applySubmissionStatus(status: number, sender, showIndexedBadge: boolean
 async function submitPageData(baseURL: string, request, sender, data): Promise<IndexingResult> {
   const force = request.action === 'reindex';
   const tabId = sender.tab?.id;
+  const sourceURL = sender.url ?? sender.tab?.url ?? request.pageData.url;
+  const rules = await getIndexingRules(baseURL, getCustomHeaders(data));
   if (!force) {
     // The status belongs to the URL that was navigated to, which is not
     // necessarily the submitted URL: a page can declare a canonical URL.
-    const sourceURL = sender.url ?? sender.tab?.url ?? request.pageData.url;
     if (tabId !== undefined) {
       const statusCode = await isErrorPage(tabId, sourceURL);
       if (statusCode !== undefined) {
         return { status: 'http_error', status_code: statusCode };
       }
     }
-    const rules = await getIndexingRules(baseURL, getCustomHeaders(data));
     if (isPageSkipped(request.pageData.url, sourceURL, rules)) {
       if (tabId !== undefined) await setGreyIcon(tabId);
       return { status: 'ok', status_code: 406 };
@@ -628,6 +637,44 @@ async function submitPageData(baseURL: string, request, sender, data): Promise<I
   }
   const labelData = await chrome.storage.local.get(['histerLabel']);
   const pageData = { ...request.pageData };
+  delete pageData.visual;
+  if (
+    tabId !== undefined &&
+    !isPageSkipped(pageData.url, sourceURL, rules) &&
+    tabSensitiveState.get(tabId) !== sourceURL &&
+    (rules.visual_mode === 'opt-in' || rules.visual_mode === 'opt-out')
+  ) {
+    try {
+      let enabled: boolean;
+      if (Object.keys(rules.visual_rules ?? {}).length > 0) {
+        const checks = await Promise.all(
+          [...new Set([sourceURL, pageData.url])].map(async (url) => {
+            const response = await fetchAPI(baseURL + 'api/rules/preview', {
+              body: { visual_policy: true, url },
+              customHeaders: getCustomHeaders(data),
+            });
+            return response.ok && (await response.json()).visual_enabled === true;
+          }),
+        );
+        enabled = checks.every(Boolean);
+      } else {
+        enabled = visualCaptureEnabled(sourceURL, rules) && visualCaptureEnabled(pageData.url, rules);
+      }
+      if (enabled) {
+        const response = await chrome.tabs.sendMessage(
+          tabId,
+          { action: 'captureVisual', url: sourceURL },
+          { frameId: sender.frameId ?? 0 },
+        );
+        if (response?.visual) {
+          pageData.visual = await completeVisualCapture(response.visual);
+          pageData.visual.resources = pageData.visual.resources.filter(
+            (asset: VisualAsset) => asset.data,
+          );
+        }
+      }
+    } catch (_) {}
+  }
   if (force) {
     pageData.metadata = { ...pageData.metadata, ignore_skip_rules: true };
   }

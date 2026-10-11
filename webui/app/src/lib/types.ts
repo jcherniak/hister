@@ -54,4 +54,5 @@ export interface DocumentPreviewResponse {
   version_id?: number;
   version_created_at?: string;
   version_count?: number;
+  visual_available?: boolean;
 }

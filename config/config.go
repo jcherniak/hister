@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/rs/zerolog/log"
@@ -45,6 +46,9 @@ type Config struct {
 	SensitiveContentPatterns map[string]string     `yaml:"sensitive_content_patterns" mapstructure:"sensitive_content_patterns"`
 	Rules                    *Rules                `yaml:"-" mapstructure:"-"`
 	Extractors               map[string]*Extractor `yaml:"extractors" mapstructure:"extractors"`
+	VisualArchive            VisualArchive         `yaml:"visual_archive" mapstructure:"visual_archive"`
+	visualMu                 sync.RWMutex
+	visualModeOverride       string
 	secretKey                []byte
 	parsedBaseURL            *url.URL
 	usesDefaultBaseURL       bool
@@ -217,6 +221,10 @@ type Rules struct {
 	Priority   *Rule   `json:"priority"`
 	Versioning *Rule   `json:"versioning"`
 	Aliases    Aliases `json:"aliases"`
+
+	VisualSites    map[string]bool   `json:"visual_sites,omitempty"`
+	VisualRules    map[string]string `json:"visual_rules,omitempty"`
+	visualPatterns map[string]*regexp.Regexp
 }
 
 type Rule struct {
@@ -599,6 +607,7 @@ func Load(filename string) (*Config, error) {
 
 func CreateDefaultConfig() *Config {
 	return &Config{
+		VisualArchive: VisualArchive{Mode: "opt-out", AVIFEncoder: "avifenc", AVIFDecoder: "avifdec"},
 		App: App{
 			SearchURL:              "https://google.com/search?q={query}",
 			Directory:              getDefaultDataDir(),
@@ -688,6 +697,9 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 
 func (c *Config) validateBasic() error {
 	if err := c.Compression.Validate(); err != nil {
+		return err
+	}
+	if err := ValidateVisualMode(c.VisualArchive.Mode); err != nil {
 		return err
 	}
 	if _, _, err := c.Server.ListenEndpoint(); err != nil {
@@ -799,6 +811,12 @@ func (c *Config) init() error {
 		c.secretKey = b
 	}
 	c.LoadTUIConfig()
+	if err := c.loadVisualSettings(); err != nil {
+		c.visualMu.Lock()
+		c.visualModeOverride = "disabled"
+		c.visualMu.Unlock()
+		log.Warn().Err(err).Msg("Invalid visual archive settings; visual capture is disabled")
+	}
 	return c.LoadRules()
 }
 
@@ -1259,6 +1277,23 @@ func (r *Rules) Count() int {
 }
 
 func (r *Rules) Compile() error {
+	sites, err := NormalizeVisualSites(r.VisualSites)
+	if err != nil {
+		return err
+	}
+	r.VisualSites = sites
+	visualRules, err := NormalizeVisualRules(r.VisualRules)
+	if err != nil {
+		return err
+	}
+	r.VisualRules = visualRules
+	r.visualPatterns = make(map[string]*regexp.Regexp, len(visualRules))
+	for pattern := range visualRules {
+		r.visualPatterns[pattern], err = regexp.Compile(pattern)
+		if err != nil {
+			return err
+		}
+	}
 	for _, rule := range []*Rule{r.Allow, r.Skip, r.Priority, r.Versioning} {
 		if rule != nil {
 			if err := rule.Compile(); err != nil {

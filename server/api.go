@@ -610,7 +610,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveRules,
-			Description:  "Update the supplied allow, skip, priority, or versioning rules. Omitted rule groups remain unchanged. Accepts application/x-www-form-urlencoded.",
+			Description:  "Update supplied indexing or visual archive rules. Omitted rule groups remain unchanged. Accepts application/x-www-form-urlencoded.",
 			Args: []*EndpointArg{
 				{
 					Name:        "allow",
@@ -636,6 +636,7 @@ func init() {
 					Required:    false,
 					Description: "Space-separated list of URL regex patterns for which document versions are tracked",
 				},
+				{Name: "visual_rules", Type: "string", Required: false, Description: "JSON object mapping URL regexp patterns to opt-in or opt-out. Opt-out takes precedence. Does not change indexing actions."},
 			},
 		},
 		{
@@ -644,13 +645,14 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveRulePreview,
-			Description:  "Validate a draft rule or generate a domain or exact URL rule, and optionally test a URL using the indexing rule matcher. Returns pattern and, when a test URL is supplied, matches. Does not fetch URLs or save rules. Tests only the supplied draft, without evaluating other saved rules. Provide exactly one of pattern, domain, or exact_url.",
+			Description:  "Validate a draft rule or generate a domain or exact URL rule, and optionally test a URL. Returns pattern and optional matches. Provide exactly one of pattern, domain, or exact_url. Alternatively, visual_policy evaluates saved visual archive rules for url and returns visual_enabled. Does not fetch URLs or save rules.",
 			JSONSchema: []*JSONSchemaField{
 				{Name: "pattern", Type: "string", Description: "A single Go regexp pattern."},
 				{Name: "domain", Type: "string", Description: "Domain or HTTP page URL from which to generate a hostname rule. Applies to HTTP and HTTPS on any port."},
 				{Name: "exact_url", Type: "string", Description: "Complete URL to match literally, including scheme, path, and query. Use the URL as stored in the index. No URL normalization is applied."},
 				{Name: "include_subdomains", Type: "bool", Description: "Include subdomains in the generated domain rule. Defaults to false."},
 				{Name: "url", Type: "string", Description: "Optional complete URL to test against the draft rule."},
+				{Name: "visual_policy", Type: "bool", Description: "Evaluate saved visual archive rules for url instead of a draft. Returns visual_enabled. Does not fetch the URL."},
 			},
 		},
 		{
@@ -878,6 +880,19 @@ func init() {
 					Required:    false,
 					Description: "Name of the extractor to use (case-insensitive); omit to use the default chain",
 				},
+			},
+		},
+		{
+			Name:         "Visual preview",
+			Path:         "/api/visual-preview",
+			Method:       GET,
+			CSRFRequired: false,
+			Public:       true,
+			Handler:      serveVisualPreview,
+			Description:  "Prepare the latest visual archive as sandboxed HTML, with streamed resource progress.",
+			Args: []*EndpointArg{
+				{Name: "url", Type: "string", Required: true, Description: "URL of the stored document"},
+				{Name: "document_id", Type: "string", Required: false, Description: "Exact document ID when the URL exists under more than one owner"},
 			},
 		},
 		{

@@ -6,6 +6,7 @@ import {
   getPageURL,
   registerResultExtractor,
 } from '../modules/extract';
+import { captureVisual } from '../modules/visual';
 
 const minimumUpdateInterval = 30 * 1000;
 const maximumPollInterval = 5 * 60 * 1000;
@@ -236,6 +237,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getPageURL') {
     if (isContextValid() && isSupportedPage()) sendResponse({ url: getPageURL() });
     return;
+  }
+  if (request.action === 'captureVisual') {
+    if (!isContextValid() || !isSupportedPage()) return;
+    captureVisual(request.url)
+      .then((visual) => sendResponse({ visual }))
+      .catch(() => sendResponse({}));
+    return true;
   }
   if (request.action !== 'reindex') return;
   if (!isContextValid()) return;

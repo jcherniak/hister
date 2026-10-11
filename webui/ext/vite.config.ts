@@ -5,7 +5,7 @@ import { resolve } from 'path';
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs';
 import { Script } from 'vm';
 
-async function buildClassicBackground(root: string, distDir: string, mode: string) {
+async function buildClassicScript(root: string, distDir: string, mode: string, entry: string) {
   await build({
     configFile: false,
     root,
@@ -17,18 +17,18 @@ async function buildClassicBackground(root: string, distDir: string, mode: strin
       minify: mode === 'production',
       rolldownOptions: {
         input: {
-          background: resolve(root, 'src/background/background.ts'),
+          [entry]: resolve(root, `src/${entry}/${entry}.ts`),
         },
         output: {
           format: 'iife',
-          entryFileNames: 'background.js',
+          entryFileNames: `${entry}.js`,
         },
       },
     },
   });
 
-  const backgroundFile = resolve(distDir, 'background.js');
-  new Script(readFileSync(backgroundFile, 'utf-8'), { filename: backgroundFile });
+  const scriptFile = resolve(distDir, `${entry}.js`);
+  new Script(readFileSync(scriptFile, 'utf-8'), { filename: scriptFile });
 }
 
 function extensionPlugin(mode: string) {
@@ -43,7 +43,8 @@ function extensionPlugin(mode: string) {
       const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
       const base = JSON.parse(readFileSync(resolve(root, 'src/manifest.json'), 'utf-8'));
 
-      await buildClassicBackground(root, distDir, mode);
+      await buildClassicScript(root, distDir, mode, 'background');
+      await buildClassicScript(root, distDir, mode, 'content');
 
       // Chrome manifest
       const chrome = structuredClone(base);

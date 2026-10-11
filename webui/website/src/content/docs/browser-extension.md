@@ -46,7 +46,7 @@ The Hister browser extension is the primary way to automatically index your brow
 
 After installing, click the extension icon in your browser toolbar to open the popup and verify the server URL is correct.
 
-> The extension only communicates with your Hister server, it never contacts any third-party services or the websites you visit (except for downloading the page's favicon while collecting page data).
+> The extension communicates with your Hister server. It can also download the page's favicon and, when visual capture is enabled, stylesheets, images, and fonts from page resource URLs. See [Visual Archive](/docs/visual-archive) for capture controls and network behavior.
 
 ### qutebrowser
 
@@ -163,6 +163,8 @@ Clicking the extension icon opens the popup, which provides quick access to the 
 | **Settings icon** (⚙)                        | Expand an inline form to view and update the Server URL and Access Token without opening the full options page.       |
 | **Show indicator for indexed pages** setting | Show a `✓` badge on pages that are already indexed. This is available after opening the settings view from the popup. |
 | **Submit as public documents** setting       | Store newly indexed pages as public documents with user id `0`. This appears after the extension is authenticated.    |
+
+The **Show this page in Hister** button opens the current page's saved preview in a new tab. It uses the canonical URL when available and does not index the page again. Browser-internal pages cannot use this button.
 
 A status banner appears at the bottom of the popup after any action, showing success or error feedback. If the server rejected the last submission, a `!` badge is shown on the extension icon; saving valid settings clears it.
 

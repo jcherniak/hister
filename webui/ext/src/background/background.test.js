@@ -23,10 +23,22 @@ function browser({
   contentScript = true,
   indexingEnabled = true,
   sourceURL = 'https://example.com/visited?tracking=true',
+  visual = {
+    html: '<html><body>Visual only</body></html>',
+    resources: [],
+    viewport_width: 1200,
+    viewport_height: 800,
+    color_scheme: 'light',
+  },
+  submissionStatuses = [],
+  visualPolicy = () => true,
+  policyStatus = 200,
 } = {}) {
   const canonicalURL = 'https://example.com/clean';
   const documents = [];
   const lookups = [];
+  const captures = [];
+  const policyChecks = [];
   let onMessage;
   let onActivated;
   let onHeadersReceived;
@@ -40,6 +52,11 @@ function browser({
   vm.runInNewContext(script, {
     URL,
     URLSearchParams,
+    TextEncoder,
+    TextDecoder,
+    atob,
+    btoa,
+    AbortSignal,
     console,
     chrome: {
       runtime: {
@@ -53,9 +70,13 @@ function browser({
         get: async () => ({ id: 1, url: sourceURL }),
         sendMessage: async (tabId, request, options) => {
           assert.equal(tabId, 1);
-          assert.equal(request.action, 'getPageURL');
           assert.equal(options.frameId, 0);
           if (!contentScript) throw new Error('No content script');
+          if (request.action === 'captureVisual') {
+            captures.push(request.url);
+            return { visual };
+          }
+          assert.equal(request.action, 'getPageURL');
           return { url: canonicalURL };
         },
       },
@@ -87,9 +108,15 @@ function browser({
       const parsed = new URL(url);
       if (parsed.protocol === 'chrome-extension:') throw new Error('No icon in test');
       if (parsed.pathname === '/api/rules') return Response.json(rules);
+      if (parsed.pathname === '/api/rules/preview') {
+        const request = JSON.parse(options.body);
+        assert.equal(request.visual_policy, true);
+        policyChecks.push(request.url);
+        return Response.json({ visual_enabled: visualPolicy(request.url) }, { status: policyStatus });
+      }
       if (parsed.pathname === '/api/add') {
         documents.push(JSON.parse(options.body));
-        return new Response('', { status: 201 });
+        return new Response('', { status: submissionStatuses[documents.length - 1] ?? 201 });
       }
       if (parsed.pathname === '/api/document') {
         lookups.push(parsed.searchParams.get('url'));
@@ -107,6 +134,8 @@ function browser({
     canonicalURL,
     documents,
     lookups,
+    captures,
+    policyChecks,
     message,
     activate: () => onActivated({ tabId: 1 }),
     respond: (statusCode, url = sourceURL, tabId = 1) =>
@@ -118,6 +147,86 @@ function browser({
       }),
   };
 }
+
+test('visual collection is opt-out, opt-in, or hard-disabled without changing indexed text', async () => {
+  for (const [visual_mode, visual_sites, enabled] of [
+    ['opt-out', {}, true],
+    ['opt-out', { 'example.com': false }, false],
+    ['opt-in', {}, false],
+    ['opt-in', { 'example.com': true }, true],
+    ['disabled', { 'example.com': true }, false],
+    [undefined, {}, false],
+  ]) {
+    const b = browser({ rules: { visual_mode, visual_sites } });
+    assert.equal((await b.submit()).status_code, 201);
+    assert.equal(b.captures.length, Number(enabled));
+    assert.equal(Boolean(b.documents[0].visual), enabled);
+    assert.equal(b.documents[0].text, 'Article text');
+  }
+});
+
+test('manual indexing never overrides visual exclusions', async () => {
+  const b = browser({ rules: { visual_mode: 'opt-out', skip: ['/visited'] } });
+  assert.equal((await b.submit(true)).status_code, 201);
+  assert.equal(b.captures.length, 0);
+  assert.equal(b.documents[0].visual, undefined);
+});
+
+test('visual pattern rules use the server matcher for visited and canonical URLs', async () => {
+  for (const excluded of [undefined, '/visited', '/clean']) {
+    const b = browser({
+      rules: { visual_mode: 'opt-in', visual_rules: { '(?i)example': 'opt-in' } },
+      visualPolicy: (url) => !excluded || !url.includes(excluded),
+    });
+    assert.equal((await b.submit()).status_code, 201);
+    assert.deepEqual(b.policyChecks.sort(), [b.sourceURL, b.canonicalURL].sort());
+    assert.equal(b.captures.length, excluded ? 0 : 1);
+    assert.equal(b.documents[0].text, 'Article text');
+  }
+});
+
+test('failed visual pattern policy checks omit capture but keep normal indexing', async () => {
+  const b = browser({
+    rules: { visual_mode: 'opt-out', visual_rules: { '(?i)private': 'opt-out' } },
+    policyStatus: 500,
+  });
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.captures.length, 0);
+  assert.equal(b.documents[0].visual, undefined);
+});
+
+test('installation disable prevents visual policy checks and capture', async () => {
+  const b = browser({ rules: { visual_mode: 'disabled', visual_rules: { 'example': 'opt-in' } } });
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.policyChecks.length, 0);
+  assert.equal(b.captures.length, 0);
+});
+
+test('failed visual capture does not stop normal indexing', async () => {
+  const b = browser({ rules: { visual_mode: 'opt-out' }, contentScript: false });
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.documents[0].visual, undefined);
+});
+
+test('oversized or rate-limited visual submissions retry normal indexing once', async () => {
+  for (const status of [413, 429]) {
+    const b = browser({ rules: { visual_mode: 'opt-out' }, submissionStatuses: [status, 201] });
+    assert.equal((await b.submit()).status_code, 201);
+    assert.equal(b.documents.length, 2);
+    assert.ok(b.documents[0].visual);
+    assert.equal(b.documents[1].visual, undefined);
+    assert.equal(b.documents[1].text, 'Article text');
+    assert.equal(b.captures.length, 1);
+  }
+});
+
+test('a known sensitive rejection prevents later visual collection', async () => {
+  const b = browser({ rules: { visual_mode: 'opt-out' }, submissionStatuses: [422, 201] });
+  assert.equal((await b.submit()).status_code, 422);
+  assert.equal((await b.submit()).status_code, 201);
+  assert.equal(b.captures.length, 1);
+  assert.equal(b.documents[1].visual, undefined);
+});
 
 test('automatic canonical submissions respect rules for both visited and canonical URLs', async () => {
   const cases = [

@@ -22,6 +22,8 @@ var browserExtensionAPIPaths = map[string]struct{}{
 	"/api/history":  {},
 	"/api/profile":  {},
 	"/api/document": {},
+
+	"/api/rules/preview": {},
 }
 
 func trustedBrowserExtensionOrigin(origin string) bool {

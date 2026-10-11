@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import VideoPreview from './VideoPreview.svelte';
+  import VisualPreview from './VisualPreview.svelte';
   import PreviewLoadError from './PreviewLoadError.svelte';
   import { apiFetch } from '#lib/api.js';
   import {
@@ -41,6 +42,7 @@
     onfullscreentoggle?: () => void;
     connected?: boolean;
     initialViewingVersionId?: number | null;
+    initialView?: 'readable' | 'visual';
     onviewingversionchange?: (id: number | null) => void;
   }
 
@@ -53,11 +55,14 @@
     onfullscreentoggle,
     connected = false,
     initialViewingVersionId = null,
+    initialView = 'readable',
     onviewingversionchange,
   }: Props = $props();
 
   let title = $state('');
   let content = $state('');
+  let visualAvailable = $state(false);
+  let showVisual = $state(false);
   let template = $state('');
   let templateData = $state<any>(null);
   let meta = $state<PreviewMetadata | null>(null);
@@ -180,7 +185,8 @@
       extractorsLoaded = false;
       // untrack so that reading the prop here does not make the effect re-run on prop change.
       const versionId = isFirstLoad ? untrack(() => initialViewingVersionId) : null;
-      loadContent(u, hint, '', versionId, selectedDocumentId);
+      const view = isFirstLoad ? untrack(() => initialView) : 'readable';
+      loadContent(u, hint, '', versionId, selectedDocumentId, view);
     }
   });
 
@@ -199,12 +205,15 @@
     extractor: string = '',
     versionId: number | null = null,
     selectedDocumentId: string = documentId,
+    view: 'readable' | 'visual' = 'readable',
   ) {
     const requestId = ++contentRequestId;
-    retryPreview = () => loadContent(u, hint, extractor, versionId, selectedDocumentId);
+    retryPreview = () => loadContent(u, hint, extractor, versionId, selectedDocumentId, view);
     loading = true;
     previewError = '';
     content = '';
+    visualAvailable = false;
+    showVisual = false;
     template = '';
     templateData = null;
     documentDetails = null;
@@ -235,6 +244,8 @@
       template = data.template || '';
       templateData = template === 'video' ? parseTemplateData(data.content) : null;
       content = template === 'video' ? '' : data.content || '<p>No content available</p>';
+      visualAvailable = data.visual_available === true && versionId === null;
+      showVisual = visualAvailable && view === 'visual';
       // Always update metadata (server always returns current doc's metadata regardless of version).
       title = data.title || hint;
       added = data.added ?? null;
@@ -303,7 +314,8 @@
 </script>
 
 <div
-  class="preview-panel border-border-brand bg-card-surface flex flex-1 flex-col overflow-hidden {fullscreen
+  class:preview-panel-details-open={showDocumentDetails && !!documentDetails}
+  class="preview-panel border-border-brand bg-card-surface flex min-h-0 flex-1 flex-col overflow-hidden {fullscreen
     ? ''
     : connected
       ? 'preview-panel-connected shrink-0 border-l-0'
@@ -557,7 +569,7 @@
     </div>
     {#if viewingVersion}
       <div
-        class="border-border-brand-muted bg-card-surface-muted flex shrink-0 items-center gap-1.5 border-b-[2px] px-4 py-2"
+        class="preview-toolbar border-border-brand-muted bg-card-surface-muted flex shrink-0 items-center gap-1.5 border-b-[2px] px-4 py-2"
       >
         <History class="text-hister-teal size-3.5 shrink-0" />
         <span class="font-inter text-text-brand-muted text-xs">
@@ -574,7 +586,53 @@
         </button>
       </div>
     {/if}
-    <ScrollArea class="min-h-0 flex-1">
+    {#if visualAvailable && !viewingVersion}
+      <div class="preview-toolbar border-border-brand-muted flex shrink-0 gap-2 border-b px-3 py-2">
+        <Button
+          variant={showVisual ? 'outline' : 'default'}
+          size="sm"
+          onclick={() => (showVisual = false)}>Readable</Button
+        >
+        <Button
+          variant={showVisual ? 'default' : 'outline'}
+          size="sm"
+          onclick={() => {
+            showVersions = false;
+            showVisual = true;
+          }}>Visual archive</Button
+        >
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          class="ml-auto shrink-0"
+          href={buildPreviewUrl(
+            url,
+            title || hintTitle,
+            viewingVersion?.id,
+            documentId,
+            showVisual ? 'visual' : 'readable',
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={showVisual
+            ? 'Open visual archive in a new tab'
+            : 'Open readable view in a new tab'}
+          aria-label={showVisual
+            ? 'Open visual archive in a new tab'
+            : 'Open readable view in a new tab'}
+        >
+          <ExternalLink class="size-4" />
+        </Button>
+      </div>
+    {/if}
+    <ScrollArea
+      class="preview-body min-h-0 min-w-0 flex-1 {showVisual &&
+      visualAvailable &&
+      !viewingVersion &&
+      !showVersions
+        ? 'visual-body'
+        : ''}"
+    >
       {#if showVersions && versionsLoading}
         <p role="status" class="font-inter text-text-brand-muted p-4 text-sm">
           Loading previous versions…
@@ -628,6 +686,8 @@
             <p class="font-inter text-text-brand-muted text-sm">No previous versions available.</p>
           {/each}
         </div>
+      {:else if showVisual && visualAvailable && !viewingVersion}
+        {#key `${url}:${documentId}`}<VisualPreview {url} {documentId} />{/key}
       {:else}
         <div
           class="preview-content font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal w-full max-w-[60em] p-4 text-sm"
@@ -740,7 +800,65 @@
 </div>
 
 <style>
+  :global(.visual-body [data-slot='scroll-area-viewport'] > div) {
+    height: 100%;
+  }
+
   .preview-panel-connected .preview-header {
     background: var(--card-surface);
+  }
+
+  @media (min-width: 48rem) {
+    .preview-panel-details-open {
+      display: grid;
+      grid-template-columns: min(25vw, 40%) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .preview-panel-details-open .preview-header {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+      border-bottom-width: 0;
+      border-right-width: 2px;
+    }
+
+    .preview-panel-details-open .preview-header > * {
+      flex-shrink: 0;
+    }
+
+    .preview-panel-details-open .preview-header > div:first-child {
+      display: flex;
+      flex-direction: column;
+      max-height: none;
+      overflow: visible;
+      font-size: 1.125rem;
+    }
+
+    .preview-panel-details-open .preview-header > div:first-child > div {
+      align-self: flex-end;
+      margin: 0 0 0.5rem;
+    }
+
+    .preview-panel-details-open #preview-document-details {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .preview-panel-details-open #preview-document-details dl > div {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .preview-panel-details-open .preview-toolbar {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .preview-panel-details-open :global(.preview-body) {
+      grid-column: 2;
+      grid-row: 2;
+    }
   }
 </style>
