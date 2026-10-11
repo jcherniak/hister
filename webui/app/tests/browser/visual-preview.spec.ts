@@ -116,3 +116,84 @@ test('an interrupted preparation does not leave a permanent spinner', async ({ p
   );
   await expect(page.getByTitle('Visual archive', { exact: true })).toHaveCount(0);
 });
+
+test('open document information leaves the archive beside it at the md breakpoint', async ({
+  page,
+}) => {
+  await page.route('**/api/preview?**', (route) =>
+    route.fulfill({
+      json: {
+        ...preview,
+        title: 'A long article title that must remain readable in the information column',
+        visual_available: true,
+        details: {
+          type: 'web',
+          language: 'en',
+          label: '',
+          visits: 1,
+          user_id: 0,
+          metadata: Object.fromEntries(
+            Array.from({ length: 30 }, (_, index) => [`property_${index}`, 'Stored metadata']),
+          ),
+        },
+      },
+    }),
+  );
+  await page.route('**/api/visual-preview?**', (route) =>
+    route.fulfill({
+      contentType: 'application/x-ndjson',
+      body: '{"type":"complete","html":"<p>Captured appearance</p>"}\n',
+    }),
+  );
+  await page.goto(previewPath());
+  await page.getByRole('button', { name: 'Show document details', exact: true }).click();
+  await page.getByRole('button', { name: 'Visual archive', exact: true }).click();
+  const frame = page.getByTitle('Visual archive', { exact: true });
+  await expect(frame).toBeVisible();
+
+  for (const width of [375, 767, 768, 769, 1280, 2048]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect
+      .poll(async () => {
+        const info = await page.locator('.preview-header').boundingBox();
+        const body = await page.locator('.preview-body').boundingBox();
+        if (!info || !body) return false;
+        return width >= 768
+          ? info.width <= width * 0.25 + 1 &&
+              body.x >= info.x + info.width - 1 &&
+              Math.abs(body.y - info.y) < 100 &&
+              body.width > info.width
+          : body.y >= info.y + info.height && Math.abs(body.x - info.x) < 1;
+      })
+      .toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width,
+    );
+  }
+
+  await page.screenshot({ path: test.info().outputPath('information-beside-archive.png') });
+  const beforeScroll = await frame.boundingBox();
+  await page.locator('.preview-header').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.locator('#preview-document-details').getByText('property_29')).toBeVisible();
+  expect(await frame.boundingBox()).toEqual(beforeScroll);
+  await page.locator('.preview-header').evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.getByRole('button', { name: 'Hide document details', exact: true }).click();
+  await expect(page.locator('#preview-document-details')).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const header = await page.locator('.preview-header').boundingBox();
+      const body = await page.locator('.preview-body').boundingBox();
+      return !!header && !!body && body.y >= header.y + header.height && body.width > 1800;
+    })
+    .toBe(true);
+  await page.getByRole('button', { name: 'Readable', exact: true }).click();
+  await expect(page.getByText('Saved article content')).toBeVisible();
+  await page.getByRole('button', { name: 'Show document details', exact: true }).click();
+  const info = await page.locator('.preview-header').boundingBox();
+  const article = await page.locator('.preview-content').boundingBox();
+  expect(article!.x).toBeGreaterThanOrEqual(info!.x + info!.width);
+});

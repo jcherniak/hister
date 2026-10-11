@@ -309,7 +309,8 @@
 </script>
 
 <div
-  class="preview-panel border-border-brand bg-card-surface flex flex-1 flex-col overflow-hidden {fullscreen
+  class:preview-panel-details-open={showDocumentDetails && !!documentDetails}
+  class="preview-panel border-border-brand bg-card-surface flex min-h-0 flex-1 flex-col overflow-hidden {fullscreen
     ? ''
     : connected
       ? 'preview-panel-connected shrink-0 border-l-0'
@@ -563,7 +564,7 @@
     </div>
     {#if viewingVersion}
       <div
-        class="border-border-brand-muted bg-card-surface-muted flex shrink-0 items-center gap-1.5 border-b-[2px] px-4 py-2"
+        class="preview-toolbar border-border-brand-muted bg-card-surface-muted flex shrink-0 items-center gap-1.5 border-b-[2px] px-4 py-2"
       >
         <History class="text-hister-teal size-3.5 shrink-0" />
         <span class="font-inter text-text-brand-muted text-xs">
@@ -581,7 +582,7 @@
       </div>
     {/if}
     {#if visualAvailable && !viewingVersion}
-      <div class="border-border-brand-muted flex shrink-0 gap-2 border-b px-3 py-2">
+      <div class="preview-toolbar border-border-brand-muted flex shrink-0 gap-2 border-b px-3 py-2">
         <Button
           variant={showVisual ? 'outline' : 'default'}
           size="sm"
@@ -597,7 +598,7 @@
         >
       </div>
     {/if}
-    <ScrollArea class="min-h-0 flex-1">
+    <ScrollArea class="preview-body min-h-0 min-w-0 flex-1">
       {#if showVersions && versionsLoading}
         <p role="status" class="font-inter text-text-brand-muted p-4 text-sm">
           Loading previous versions…
@@ -767,5 +768,59 @@
 <style>
   .preview-panel-connected .preview-header {
     background: var(--card-surface);
+  }
+
+  @media (min-width: 48rem) {
+    .preview-panel-details-open {
+      display: grid;
+      grid-template-columns: min(25vw, 40%) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .preview-panel-details-open .preview-header {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+      border-bottom-width: 0;
+      border-right-width: 2px;
+    }
+
+    .preview-panel-details-open .preview-header > * {
+      flex-shrink: 0;
+    }
+
+    .preview-panel-details-open .preview-header > div:first-child {
+      display: flex;
+      flex-direction: column;
+      max-height: none;
+      overflow: visible;
+      font-size: 1.125rem;
+    }
+
+    .preview-panel-details-open .preview-header > div:first-child > div {
+      align-self: flex-end;
+      margin: 0 0 0.5rem;
+    }
+
+    .preview-panel-details-open #preview-document-details {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .preview-panel-details-open #preview-document-details dl > div {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .preview-panel-details-open .preview-toolbar {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .preview-panel-details-open :global(.preview-body) {
+      grid-column: 2;
+      grid-row: 2;
+    }
   }
 </style>
