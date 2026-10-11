@@ -10,6 +10,9 @@ interface RuleLists {
   skip: string[];
   priority: string[];
   versioning: string[];
+  visual_mode?: 'disabled' | 'opt-in' | 'opt-out';
+  visual_sites?: Record<string, boolean>;
+  visual_can_configure_install?: boolean;
 }
 
 export interface RulesData extends RuleLists {
@@ -59,6 +62,9 @@ export async function fetchRules(): Promise<RulesData> {
     priority: orDefault(data.priority, []),
     versioning: orDefault(data.versioning, []),
     aliases: orDefault(data.aliases, {}),
+    visual_mode: data.visual_mode,
+    visual_sites: orDefault(data.visual_sites, {}),
+    visual_can_configure_install: data.visual_can_configure_install ?? false,
   };
 }
 
@@ -68,10 +74,30 @@ export async function saveRuleLists(rules: RuleLists): Promise<void> {
   formData.set('skip', rules.skip.join('\n'));
   formData.set('priority', rules.priority.join('\n'));
   formData.set('versioning', rules.versioning.join('\n'));
+  if (rules.visual_sites !== undefined) {
+    formData.set('visual_sites', JSON.stringify(rules.visual_sites));
+  }
   const response = await apiFetch('/rules', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: formData.toString(),
   });
   if (!response.ok) throw await responseError(response, 'Failed to save rules');
+}
+
+export async function saveVisualSettings(settings: {
+  visual_mode?: RuleLists['visual_mode'];
+  visual_sites?: Record<string, boolean>;
+}): Promise<void> {
+  const formData = new URLSearchParams();
+  if (settings.visual_mode !== undefined) formData.set('visual_mode', settings.visual_mode);
+  if (settings.visual_sites !== undefined) {
+    formData.set('visual_sites', JSON.stringify(settings.visual_sites));
+  }
+  const response = await apiFetch('/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formData.toString(),
+  });
+  if (!response.ok) throw await responseError(response, 'Failed to save visual archive settings');
 }

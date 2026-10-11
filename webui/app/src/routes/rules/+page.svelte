@@ -11,6 +11,7 @@
   import DeleteMatchingDocumentsDialog from '#lib/components/DeleteMatchingDocumentsDialog.svelte';
   import DeleteMatchingDocumentsOption from '#lib/components/DeleteMatchingDocumentsOption.svelte';
   import RulePatternEditor from '#lib/components/RulePatternEditor.svelte';
+  import VisualArchiveSettings from '#lib/components/VisualArchiveSettings.svelte';
   import { deleteDocuments, previewDocumentDeletion } from '#lib/document-delete.js';
   import {
     fetchRules,
@@ -668,6 +669,12 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <VisualArchiveSettings
+        {rules}
+        onSaved={async () => {
+          rules = await fetchRules();
+        }}
+      />
       <!-- Search Aliases Card -->
       <Card.Root id="search-aliases" class="scroll-mt-6">
         <Card.Header color="hister-indigo">

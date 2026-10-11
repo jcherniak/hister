@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import VideoPreview from './VideoPreview.svelte';
+  import VisualPreview from './VisualPreview.svelte';
   import PreviewLoadError from './PreviewLoadError.svelte';
   import { apiFetch } from '#lib/api.js';
   import {
@@ -58,6 +59,8 @@
 
   let title = $state('');
   let content = $state('');
+  let visualAvailable = $state(false);
+  let showVisual = $state(false);
   let template = $state('');
   let templateData = $state<any>(null);
   let meta = $state<PreviewMetadata | null>(null);
@@ -205,6 +208,8 @@
     loading = true;
     previewError = '';
     content = '';
+    visualAvailable = false;
+    showVisual = false;
     template = '';
     templateData = null;
     documentDetails = null;
@@ -235,6 +240,7 @@
       template = data.template || '';
       templateData = template === 'video' ? parseTemplateData(data.content) : null;
       content = template === 'video' ? '' : data.content || '<p>No content available</p>';
+      visualAvailable = data.visual_available === true && versionId === null;
       // Always update metadata (server always returns current doc's metadata regardless of version).
       title = data.title || hint;
       added = data.added ?? null;
@@ -574,6 +580,23 @@
         </button>
       </div>
     {/if}
+    {#if visualAvailable && !viewingVersion}
+      <div class="border-border-brand-muted flex shrink-0 gap-2 border-b px-3 py-2">
+        <Button
+          variant={showVisual ? 'outline' : 'default'}
+          size="sm"
+          onclick={() => (showVisual = false)}>Readable</Button
+        >
+        <Button
+          variant={showVisual ? 'default' : 'outline'}
+          size="sm"
+          onclick={() => {
+            showVersions = false;
+            showVisual = true;
+          }}>Visual archive</Button
+        >
+      </div>
+    {/if}
     <ScrollArea class="min-h-0 flex-1">
       {#if showVersions && versionsLoading}
         <p role="status" class="font-inter text-text-brand-muted p-4 text-sm">
@@ -628,6 +651,8 @@
             <p class="font-inter text-text-brand-muted text-sm">No previous versions available.</p>
           {/each}
         </div>
+      {:else if showVisual && visualAvailable && !viewingVersion}
+        {#key `${url}:${documentId}`}<VisualPreview {url} {documentId} />{/key}
       {:else}
         <div
           class="preview-content font-inter text-text-brand-secondary prose dark:prose-invert prose-a:text-hister-teal w-full max-w-[60em] p-4 text-sm"

@@ -26,6 +26,7 @@ import (
 	"github.com/asciimoo/hister/server/metrics"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/vectorstore"
+	"github.com/asciimoo/hister/server/visual"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -58,6 +59,8 @@ type Indexer struct {
 	indexesClosed     bool
 	dir               string
 	data              *dataStore
+	visual            *visual.Store
+	visualConfig      *config.Config
 	langDetector      document.LanguageDetector
 	reindexInProgress atomic.Bool
 	embedder          *vectorstore.Embedder
@@ -285,6 +288,8 @@ type Results struct {
 }
 
 type documentWritePlan struct {
+	visualCapture  *visual.Capture
+	visualContext  context.Context
 	target         bleve.Index
 	staleIndexes   []bleve.Index
 	oldHTMLKeys    []string
@@ -325,6 +330,7 @@ func (s storedDocumentState) embeddingTextChanged(text string) bool {
 }
 
 type MultiBatch struct {
+	visualWrites        map[string]documentWritePlan
 	indexer             *Indexer
 	batches             map[string]*indexBatch
 	orphanedHTMLKeys    []string
@@ -430,6 +436,7 @@ func New(cfg *config.Config) (*Indexer, error) {
 		return nil, fmt.Errorf("store initial embedding configuration metadata: %w", err)
 	}
 	idx.disablePreviews = cfg.App.DisablePreviews
+	idx.visualConfig = cfg
 	idx.userHandling = cfg.App.UserHandling
 	idx.directories = cfg.Indexer.Directories
 	idx.maxFileSize = defaultMaxFileSize
@@ -525,6 +532,7 @@ func initializeIndexer(basePath string, opts indexOptions, embeddingFingerprint 
 		embedCancel:       embedCancel,
 		maintenance:       newMaintenanceRunner(),
 		data:              newDataStore(filepath.Join(basePath, dataDirName)),
+		visual:            visual.NewStore(filepath.Join(basePath, dataDirName, "visual")),
 		maxFileSize:       defaultMaxFileSize,
 	}
 	initialized := false
@@ -774,6 +782,8 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	// content-addressed files written during reindex are immediately usable
 	// after the rename step. No data directory rename is needed.
 	tmpIdx.data = idx.data
+	tmpIdx.visual = idx.visual
+	tmpIdx.visualConfig = idx.visualConfig
 	if idx.embeddingQueue != nil {
 		idx.stopEmbeddingQueue()
 		queueStopped = true
@@ -960,6 +970,8 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	replacement.userHandling = idx.userHandling
 	replacement.sensitivePattern = idx.sensitivePattern
 	replacement.semanticConfig = idx.semanticConfig
+	replacement.visual = idx.visual
+	replacement.visualConfig = idx.visualConfig
 	idx.adopt(replacement)
 	// Restore settings that are not part of the index state.
 	idx.disablePreviews = tmpIdx.disablePreviews
@@ -1021,6 +1033,11 @@ func (i *Indexer) Cleanup(dirs []*config.Directory) (CleanupResult, error) {
 // per-key shard lock, so the check and the removal are atomic and safe against
 // concurrent /api/add calls.
 func (i *Indexer) CleanupDataFiles() (int, int, error) {
+	if i.visual != nil {
+		if _, err := i.visual.Cleanup(func(id string) bool { return i.getStoredDocumentState(id).found }); err != nil {
+			return 0, 0, fmt.Errorf("clean up visual archive: %w", err)
+		}
+	}
 	htmlRemoved, err := i.data.cleanup("html_key", htmlSubdir, i.countKeyRefs)
 	if err != nil {
 		return htmlRemoved, 0, fmt.Errorf("failed to clean up orphaned HTML data files: %w", err)
@@ -1273,6 +1290,9 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 	// Capture the submission's override before storage preparation can restore a
 	// saved override. Automatic updates must still filter newly extracted URLs.
 	ignoreRules := d.IgnoreSkipRules()
+	if i.visualConfig == nil || !i.visualConfig.VisualEnabled(d.URL, options.rules) {
+		d.Visual = nil
+	}
 	if !ignoreRules && options.rules.IsSkip(d.URL) {
 		log.Debug().Str("url", d.URL).Msg("skip indexing document excluded by rules")
 		return nil
@@ -1350,6 +1370,7 @@ func (i *Indexer) prepareDocumentWrite(ctx context.Context, d *document.Document
 		return nil, err
 	}
 	plan.needsEmbedding = needsEmbedding
+	plan.visualContext = ctx
 	return &plan, nil
 }
 
@@ -1382,7 +1403,8 @@ func (i *Indexer) saveWithState(d *document.Document, state storedDocumentState)
 }
 
 func (i *Indexer) prepareStorageWrite(d *document.Document, state storedDocumentState) (documentWritePlan, error) {
-	plan := documentWritePlan{}
+	plan := documentWritePlan{visualCapture: d.Visual, visualContext: context.Background()}
+	d.Visual = nil
 	// An ordinary update must not erase an earlier explicit indexing choice.
 	if _, supplied := d.Metadata[document.MetadataIgnoreSkipRules]; !supplied && state.ignoreSkipRules {
 		d.SetIgnoreSkipRules(true)
@@ -1427,6 +1449,7 @@ func (i *Indexer) applyDocumentWrite(d *document.Document, plan documentWritePla
 		}
 	}
 	i.cleanupDataKeys(plan.oldHTMLKeys, plan.newHTMLKey, plan.oldFaviconKeys, plan.newFaviconKey)
+	i.storeVisual(d.ID(), plan)
 	if plan.needsEmbedding {
 		if err := i.enqueueEmbedding(d.ID()); err != nil {
 			return fmt.Errorf("enqueue embedding: %w", err)
@@ -1694,6 +1717,8 @@ func (i *Indexer) adopt(replacement *Indexer) {
 	i.indexesClosed = false
 	i.dir = replacement.dir
 	i.data = replacement.data
+	i.visual = replacement.visual
+	i.visualConfig = replacement.visualConfig
 	i.langDetector = replacement.langDetector
 	i.embedder = replacement.embedder
 	i.vectorStore = replacement.vectorStore
@@ -1725,6 +1750,7 @@ func newMultiBatch(idx *Indexer) *MultiBatch {
 		batches:           make(map[string]*indexBatch),
 		embeddingIDs:      make(map[string]struct{}),
 		deletedIDs:        make(map[string]struct{}),
+		visualWrites:      make(map[string]documentWritePlan),
 		incrementAddCount: false,
 	}
 }
@@ -1756,6 +1782,9 @@ func (b *MultiBatch) recordIndexingMetric(documentType string, startedAt time.Ti
 }
 
 func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWritePlan) error {
+	if plan.visualCapture != nil {
+		b.visualWrites[d.ID()] = plan
+	}
 	delete(b.deletedIDs, d.ID())
 	if plan.needsEmbedding {
 		if b.indexer.embeddingWorkers > 0 {
@@ -1784,6 +1813,7 @@ func (b *MultiBatch) applyDocumentWrite(d *document.Document, plan documentWrite
 }
 
 func (b *MultiBatch) Delete(id string) {
+	delete(b.visualWrites, id)
 	oldHTMLKeys, oldFaviconKeys := b.indexer.getDocKeysByID(id)
 	delete(b.embeddingIDs, id)
 	b.deletedIDs[id] = struct{}{}
@@ -1808,7 +1838,12 @@ func (b *MultiBatch) Save() error {
 		}
 	}
 	b.indexer.cleanupDataKeys(b.orphanedHTMLKeys, "", b.orphanedFaviconKeys, "")
+	for id, plan := range b.visualWrites {
+		b.indexer.storeVisual(id, plan)
+	}
+	clear(b.visualWrites)
 	for id := range b.deletedIDs {
+		b.indexer.deleteVisual(id)
 		if err := b.indexer.cancelEmbedding(id); err != nil {
 			log.Warn().Err(err).Str("id", id).Msg("failed to cancel embedding job")
 		}
@@ -1847,6 +1882,7 @@ func (i *Indexer) Delete(id string) error {
 	for _, k := range faviconKeys {
 		i.data.deleteIfOrphaned("favicon_key", faviconSubdir, k, i.countKeyRefs)
 	}
+	i.deleteVisual(id)
 	return nil
 }
 

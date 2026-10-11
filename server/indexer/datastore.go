@@ -9,7 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/asciimoo/hister/server/visual"
 
 	"github.com/rs/zerolog/log"
 )
@@ -97,11 +100,10 @@ func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(s
 	mu.Lock()
 	defer mu.Unlock()
 	if refCount(field, key) == 0 {
-		path := dataFilePath(ds.dir, subdir, key)
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
-		} else {
-			log.Debug().Str("key", key).Str("subdir", subdir).Msg("removed orphaned data file on document update")
+		for _, path := range []string{dataFilePath(ds.dir, subdir, key), zstdDataFilePath(ds.dir, subdir, key)} {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
+			}
 		}
 	}
 }
@@ -121,7 +123,8 @@ func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string)
 			log.Warn().Err(err).Str("path", path).Msg("error accessing data file during cleanup")
 			return nil
 		}
-		if info.IsDir() || filepath.Ext(path) != ".gz" {
+		ext := filepath.Ext(path)
+		if info.IsDir() || (ext != ".gz" && ext != ".zst") {
 			return nil
 		}
 		// Reconstruct the key from the 3-level directory prefix + filename.
@@ -135,7 +138,10 @@ func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string)
 			return nil
 		}
 		// parts[3] is the filename with .gz suffix; strip it to get the hash tail.
-		key := parts[0] + parts[1] + parts[2] + parts[3][:len(parts[3])-3]
+		key := parts[0] + parts[1] + parts[2] + strings.TrimSuffix(parts[3], ext)
+		if !validDataKey(key) {
+			return nil
+		}
 		mu := ds.shard(key)
 		mu.Lock()
 		if refCount(field, key) == 0 {
@@ -158,6 +164,10 @@ func dataFilePath(dataDir, subdir, key string) string {
 	return filepath.Join(dataDir, subdir, key[0:2], key[2:4], key[4:6], key[6:]+".gz")
 }
 
+func zstdDataFilePath(dataDir, subdir, key string) string {
+	return strings.TrimSuffix(dataFilePath(dataDir, subdir, key), ".gz") + ".zst"
+}
+
 // writeFileLocked writes data compressed with gzip to the path derived from
 // key. If the file already exists it is left unchanged (same hash = same
 // content). The caller must hold the relevant shard lock.
@@ -165,6 +175,34 @@ func writeFileLocked(dataDir, subdir, key string, data []byte) error {
 	fpath := dataFilePath(dataDir, subdir, key)
 	if _, err := os.Stat(fpath); err == nil {
 		return nil
+	}
+	if subdir == htmlSubdir {
+		fpath = zstdDataFilePath(dataDir, subdir, key)
+		if _, err := os.Stat(fpath); err == nil {
+			return nil
+		}
+		compressed, err := visual.CompressText(data)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
+			return err
+		}
+		file, err := os.CreateTemp(filepath.Dir(fpath), ".pending-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(file.Name())
+		if _, err = file.Write(compressed); err == nil {
+			err = file.Sync()
+		}
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return err
+		}
+		return os.Rename(file.Name(), fpath)
 	}
 	if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -191,6 +229,14 @@ func writeFileLocked(dataDir, subdir, key string, data []byte) error {
 // readFileLocked decompresses and returns the data file identified by key.
 // The caller must hold the relevant shard lock.
 func readFileLocked(dataDir, subdir, key string) ([]byte, error) {
+	if !validDataKey(key) {
+		return nil, fmt.Errorf("invalid data key")
+	}
+	if data, err := os.ReadFile(zstdDataFilePath(dataDir, subdir, key)); err == nil {
+		return visual.DecompressText(data, visual.MaxStoredTextBytes)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	fpath := dataFilePath(dataDir, subdir, key)
 	f, err := os.Open(fpath)
 	if err != nil {
@@ -210,9 +256,12 @@ func readFileLocked(dataDir, subdir, key string) ([]byte, error) {
 			log.Warn().Err(cerr).Str("path", fpath).Msg("failed to close gzip reader")
 		}
 	}()
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.LimitReader(r, visual.MaxStoredTextBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("decompress data: %w", err)
+	}
+	if len(data) > visual.MaxStoredTextBytes {
+		return nil, fmt.Errorf("stored data exceeds size limit")
 	}
 	return data, nil
 }

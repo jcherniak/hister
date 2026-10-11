@@ -412,6 +412,8 @@ func serveConfig(c *webContext) {
 		DisablePreviews      bool                      `json:"disablePreviews,omitempty"`
 		MaxBatchBodyBytes    int64                     `json:"maxBatchBodyBytes"`
 		Search               searchschema.Capabilities `json:"search"`
+		VisualMode           string                    `json:"visualMode"`
+		VisualSites          map[string]bool           `json:"visualSites"`
 	}
 	authMode := "none"
 	authenticated := true
@@ -456,6 +458,8 @@ func serveConfig(c *webContext) {
 		DisablePreviews:      c.Config.App.DisablePreviews,
 		MaxBatchBodyBytes:    c.Config.Server.MaxBatchBodyBytes(),
 		Search:               searchschema.CapabilitiesDefinition(),
+		VisualMode:           c.Config.VisualMode(),
+		VisualSites:          c.effectiveRules().VisualSites,
 	})
 }
 
@@ -1247,11 +1251,14 @@ func serveRules(c *webContext) {
 	rules := c.effectiveRules()
 	if m == http.MethodGet {
 		type rulesResponse struct {
-			Allow      []string          `json:"allow"`
-			Skip       []string          `json:"skip"`
-			Priority   []string          `json:"priority"`
-			Versioning []string          `json:"versioning"`
-			Aliases    map[string]string `json:"aliases"`
+			Allow                     []string          `json:"allow"`
+			Skip                      []string          `json:"skip"`
+			Priority                  []string          `json:"priority"`
+			Versioning                []string          `json:"versioning"`
+			Aliases                   map[string]string `json:"aliases"`
+			VisualMode                string            `json:"visual_mode"`
+			VisualSites               map[string]bool   `json:"visual_sites"`
+			VisualCanConfigureInstall bool              `json:"visual_can_configure_install"`
 		}
 		allow := []string{}
 		if rules.Allow != nil && rules.Allow.ReStrs != nil {
@@ -1273,7 +1280,7 @@ func serveRules(c *webContext) {
 		if aliases == nil {
 			aliases = make(map[string]string)
 		}
-		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases})
+		c.JSON(rulesResponse{Allow: allow, Skip: skip, Priority: priority, Versioning: versioning, Aliases: aliases, VisualMode: c.Config.VisualMode(), VisualSites: rules.VisualSites, VisualCanConfigureInstall: canConfigureVisualInstall(c)})
 		return
 	}
 	if m != http.MethodPost {
@@ -1286,6 +1293,11 @@ func serveRules(c *webContext) {
 		return
 	}
 	f := c.Request.PostForm
+	visualMode, status, visualErr := parseVisualSettings(c, f, rules)
+	if visualErr != nil {
+		http.Error(c.Response, visualErr.Error(), status)
+		return
+	}
 	type ruleUpdate struct {
 		patterns []string
 		target   **config.Rule
@@ -1329,8 +1341,15 @@ func serveRules(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRules(); err != nil {
+		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
+			serve500(c)
+			return
+		}
+	}
+	if visualMode != "" {
+		if err := c.Config.SetVisualMode(visualMode); err != nil {
+			log.Error().Err(err).Msg("failed to save visual archive mode")
 			serve500(c)
 			return
 		}
@@ -1595,6 +1614,10 @@ func servePreview(c *webContext) {
 	if viewingVersionID > 0 {
 		payload.VersionID = viewingVersionID
 		payload.VersionCreatedAt = &viewingVersionCreatedAt
+	}
+	if versionIDStr == "" && c.Config.VisualEnabled(u, c.effectiveRules()) {
+		manifest, visualErr := c.Indexer.ReadVisual(document.GetDocID(doc.UserID, doc.URL))
+		payload.VisualAvailable = visualErr == nil && manifest != nil
 	}
 	if versionCount, err := model.CountDocumentVersions(u, doc.UserID); err == nil && versionCount > 0 {
 		payload.VersionCount = versionCount
@@ -1904,7 +1927,7 @@ func serveAddAlias(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRules(); err != nil {
+		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
 			serve500(c)
 			return
@@ -1934,7 +1957,7 @@ func serveDeleteAlias(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRules(); err != nil {
+		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
 			serve500(c)
 			return

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/asciimoo/hister/files"
+	"github.com/asciimoo/hister/server/visual"
 
 	"github.com/rs/zerolog/log"
 )
@@ -45,6 +46,9 @@ type Document struct {
 	Label      string         `json:"label"`
 	AddCount   uint           `json:"add_count"`
 	Metadata   map[string]any `json:"metadata"`
+
+	Visual *visual.Capture `json:"visual,omitempty"`
+
 	// ExtraDocuments can be populated by extractors to create new documents during the extraction
 	ExtraDocuments []*Document `json:"-"`
 	// SkipIndexing can be set by extractors to mark the document to exclude from indexing. Useful when populating ExtraDocuments

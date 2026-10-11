@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/rs/zerolog/log"
@@ -44,6 +45,10 @@ type Config struct {
 	SensitiveContentPatterns map[string]string     `yaml:"sensitive_content_patterns" mapstructure:"sensitive_content_patterns"`
 	Rules                    *Rules                `yaml:"-" mapstructure:"-"`
 	Extractors               map[string]*Extractor `yaml:"extractors" mapstructure:"extractors"`
+	VisualArchive            VisualArchive         `yaml:"visual_archive" mapstructure:"visual_archive"`
+	visualMu                 sync.RWMutex
+	visualModeOverride       string
+	rulesMu                  sync.RWMutex
 	secretKey                []byte
 	parsedBaseURL            *url.URL
 	usesDefaultBaseURL       bool
@@ -211,11 +216,12 @@ type Hotkeys struct {
 }
 
 type Rules struct {
-	Allow      *Rule   `json:"allow"`
-	Skip       *Rule   `json:"skip"`
-	Priority   *Rule   `json:"priority"`
-	Versioning *Rule   `json:"versioning"`
-	Aliases    Aliases `json:"aliases"`
+	Allow       *Rule           `json:"allow"`
+	Skip        *Rule           `json:"skip"`
+	Priority    *Rule           `json:"priority"`
+	Versioning  *Rule           `json:"versioning"`
+	Aliases     Aliases         `json:"aliases"`
+	VisualSites map[string]bool `json:"visual_sites,omitempty"`
 }
 
 type Rule struct {
@@ -598,6 +604,7 @@ func Load(filename string) (*Config, error) {
 
 func CreateDefaultConfig() *Config {
 	return &Config{
+		VisualArchive: VisualArchive{Mode: "opt-out", AVIFEncoder: "avifenc", AVIFDecoder: "avifdec"},
 		App: App{
 			SearchURL:              "https://google.com/search?q={query}",
 			Directory:              getDefaultDataDir(),
@@ -685,6 +692,9 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 }
 
 func (c *Config) validateBasic() error {
+	if err := ValidateVisualMode(c.VisualArchive.Mode); err != nil {
+		return err
+	}
 	if _, _, err := c.Server.ListenEndpoint(); err != nil {
 		return err
 	}
@@ -794,6 +804,9 @@ func (c *Config) init() error {
 		c.secretKey = b
 	}
 	c.LoadTUIConfig()
+	if err := c.loadVisualSettings(); err != nil {
+		return err
+	}
 	return c.LoadRules()
 }
 
@@ -1159,29 +1172,7 @@ func (c *Config) LoadRules() error {
 }
 
 func (c *Config) SaveRules() error {
-	f, err := os.OpenFile(c.RulesPath(), os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return err
-	}
-	if c.Rules == nil {
-		c.Rules = &Rules{
-			Allow:      &Rule{ReStrs: make([]string, 0)},
-			Skip:       &Rule{ReStrs: make([]string, 0)},
-			Priority:   &Rule{ReStrs: make([]string, 0)},
-			Versioning: &Rule{ReStrs: make([]string, 0)},
-			Aliases:    make(Aliases),
-		}
-	}
-	e := json.NewEncoder(f)
-	e.SetIndent("", "  ")
-	if err = e.Encode(c.Rules); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return c.LoadRules()
+	return c.SaveRulesSnapshot(c.RulesSnapshot())
 }
 
 func (r *Rules) IsPriority(s string) bool {
@@ -1254,6 +1245,11 @@ func (r *Rules) Count() int {
 }
 
 func (r *Rules) Compile() error {
+	sites, err := NormalizeVisualSites(r.VisualSites)
+	if err != nil {
+		return err
+	}
+	r.VisualSites = sites
 	for _, rule := range []*Rule{r.Allow, r.Skip, r.Priority, r.Versioning} {
 		if rule != nil {
 			if err := rule.Compile(); err != nil {

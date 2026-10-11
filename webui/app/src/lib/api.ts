@@ -19,6 +19,8 @@ export interface AppConfig {
   userId?: number;
   oauthOnly?: boolean;
   disablePreviews?: boolean;
+  visualMode?: 'disabled' | 'opt-in' | 'opt-out';
+  visualSites?: Record<string, boolean>;
   semanticEnabled?: boolean;
   semanticWeight?: number;
   similarityThreshold?: number;

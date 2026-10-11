@@ -97,6 +97,7 @@ function browser({ hidden = false, contentType = 'text/html', respond = true } =
     document,
     chrome: { runtime },
     URL,
+    TextEncoder,
     Date: { now: () => now },
     console,
     setTimeout: (fn, delay) => {

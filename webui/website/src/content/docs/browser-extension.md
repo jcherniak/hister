@@ -46,7 +46,7 @@ The Hister browser extension is the primary way to automatically index your brow
 
 After installing, click the extension icon in your browser toolbar to open the popup and verify the server URL is correct.
 
-> The extension only communicates with your Hister server, it never contacts any third-party services or the websites you visit (except for downloading the page's favicon while collecting page data).
+> The extension communicates with your Hister server. It can also download the page's favicon and, when visual capture is enabled, stylesheets, images, and fonts from page resource URLs. See [Visual Archive](/docs/visual-archive) for capture controls and network behavior.
 
 ### qutebrowser
 

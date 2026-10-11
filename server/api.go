@@ -881,6 +881,19 @@ func init() {
 			},
 		},
 		{
+			Name: "Visual preview",
+			Path: "/api/visual-preview",
+			Method: GET,
+			CSRFRequired: false,
+			Public: true,
+			Handler: serveVisualPreview,
+			Description: "Prepare the latest visual archive as sandboxed HTML, with streamed resource progress.",
+			Args: []*EndpointArg{
+				{Name: "url", Type: "string", Required: true, Description: "URL of the stored document"},
+				{Name: "document_id", Type: "string", Required: false, Description: "Exact document ID when the URL exists under more than one owner"},
+			},
+		},
+		{
 			Name:         "Extractors",
 			Path:         "/api/extractors",
 			Method:       GET,

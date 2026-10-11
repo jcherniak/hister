@@ -35,12 +35,16 @@ The `app.directory` setting is the main Hister data directory. A default SQLite 
 | `index.db` and `index_LANG.db` | Searchable document fields and full text indexes                                                        |
 | `data/html/`                   | Compressed HTML previews, addressed by content hash                                                     |
 | `data/favicon/`                | Compressed favicons, addressed by content hash                                                          |
+| `data/visual/`                 | Optional latest visual snapshots and shared CSS, image, and font resources                              |
+| `visual-settings.json`         | Installation visual archive mode selected in the web interface                                          |
 | `db.sqlite3`                   | Users, browser sessions, search result history, crawl jobs, version differences, and internal job state |
 | `vectors.sqlite3`              | Semantic search chunks and vectors when semantic search uses SQLite                                     |
 | `rules.json`                   | Rules and aliases in single user mode                                                                   |
 | `.secret_key`                  | The secret used to derive authentication proofs for global token sessions                               |
 
 Language detection can create more than one `index_LANG.db` directory. Identical HTML or favicons share the same content addressed file, which reduces duplicate storage.
+
+New HTML preview files use Zstandard. Existing gzip files remain readable and are not converted. Visual HTML and CSS also use Zstandard; visual images and fonts do not receive outer compression. See [Visual Archive](/docs/visual-archive) for settings, image policies, limits, and retention.
 
 When `server.database` is a PostgreSQL connection string, SQL data is stored in PostgreSQL instead of `db.sqlite3`. Semantic vectors are also stored in PostgreSQL. The Bleve search indexes and HTML and favicon data remain under `app.directory`.
 
