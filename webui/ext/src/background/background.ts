@@ -619,7 +619,7 @@ function applySubmissionStatus(status: number, sender, showIndexedBadge: boolean
 async function submitPageData(baseURL: string, request, sender, data): Promise<IndexingResult> {
   const force = request.action === 'reindex';
   const tabId = sender.tab?.id;
-  const sourceURL = sender.url ?? sender.tab?.url ?? request.pageData.url;
+  const sourceURL = request.sourceURL ?? sender.url ?? sender.tab?.url ?? request.pageData.url;
   const rules = await getIndexingRules(baseURL, getCustomHeaders(data));
   if (!force) {
     // The status belongs to the URL that was navigated to, which is not
