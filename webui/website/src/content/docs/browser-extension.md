@@ -164,6 +164,8 @@ Clicking the extension icon opens the popup, which provides quick access to the 
 | **Show indicator for indexed pages** setting | Show a `✓` badge on pages that are already indexed. This is available after opening the settings view from the popup. |
 | **Submit as public documents** setting       | Store newly indexed pages as public documents with user id `0`. This appears after the extension is authenticated.    |
 
+The **Show this page in Hister** button opens the current page's saved preview in a new tab. It uses the canonical URL when available and does not index the page again. Browser-internal pages cannot use this button.
+
 A status banner appears at the bottom of the popup after any action, showing success or error feedback. If the server rejected the last submission, a `!` badge is shown on the extension icon; saving valid settings clears it.
 
 The indexed page indicator is off by default. To enable it, click the extension icon, open the settings view with the settings icon, then turn on **Show indicator for indexed pages**. When enabled, the extension checks the active page against your Hister server and keeps a `✓` badge visible on pages already present in the index.

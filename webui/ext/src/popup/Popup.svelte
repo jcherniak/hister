@@ -29,6 +29,7 @@
   let sourceTabURL = $state('');
   let messageKey = $state(0); // to reappear message every time it is updated
   let pageLabel = $state('');
+  let openingPage = $state(false);
 
   function setMessage(mType, msg) {
     message = msg;
@@ -265,6 +266,26 @@
     }
   }
 
+  async function showPageInHister() {
+    openingPage = true;
+    try {
+      const previewURL = new URL(url);
+      if (!/^https?:$/.test(previewURL.protocol) || !/^https?:\/\//i.test(tabURL)) {
+        throw new Error('The server and page must use HTTP or HTTPS URLs.');
+      }
+      previewURL.pathname = `${previewURL.pathname.replace(/\/+$/, '')}/preview`;
+      previewURL.search = new URLSearchParams({ id: tabURL }).toString();
+      previewURL.hash = '';
+      await chrome.tabs.create({ url: previewURL.href });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Could not open this page in Hister.',
+      );
+    } finally {
+      openingPage = false;
+    }
+  }
+
   function reindex() {
     chrome.runtime.sendMessage({ action: 'indexCurrentPage' }, (r) => {
       const error = chrome.runtime.lastError;
@@ -442,6 +463,14 @@
           class="border-brutal-border font-outfit hover:border-hister-indigo h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
         >
           Index this page now
+        </Button>
+        <Button
+          variant="outline"
+          onclick={showPageInHister}
+          disabled={openingPage || !/^https?:\/\//i.test(tabURL)}
+          class="border-brutal-border font-outfit hover:border-hister-indigo mt-2 h-9 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[3px_3px_0_var(--brutal-shadow)]"
+        >
+          Show this page in Hister
         </Button>
       </div>
 

@@ -7,7 +7,7 @@
     "build": "vite build",
     "dev": "vite build --watch --mode development",
     "test": "node --test src/content/content.test.js src/background/background.test.js src/modules/visual.test.js",
-    "test:browser": "node --test src/modules/visual.browser.test.js"
+    "test:browser": "node --test src/modules/visual.browser.test.js src/popup/popup.browser.test.js"
   },
   "dependencies": {
     "@hister/components": "^1.0.0",
