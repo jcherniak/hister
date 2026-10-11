@@ -336,8 +336,12 @@ func Render(ctx context.Context, pageURL string, manifest *Manifest, markup []by
 					}
 				}
 				attributes := child.Attr[:0]
+				externalLink := false
 				for _, attribute := range child.Attr {
 					key := strings.ToLower(attribute.Key)
+					if tag == "a" && key == "rel" {
+						continue
+					}
 					if strings.HasPrefix(key, "on") || key == "srcdoc" || key == "srcset" || key == "ping" || key == "action" || key == "formaction" || key == "target" || key == "background" || key == "autofocus" || key == "autoplay" || key == "is" || key == "nonce" || key == "integrity" {
 						continue
 					}
@@ -346,7 +350,12 @@ func Render(ctx context.Context, pageURL string, manifest *Manifest, markup []by
 					}
 					if key == "href" || key == "xlink:href" {
 						if !strings.HasPrefix(attribute.Val, "#") {
-							continue
+							link, err := url.Parse(resolveURL(pageURL, strings.TrimSpace(attribute.Val)))
+							if tag != "a" || child.Namespace != "" || key != "href" || attribute.Namespace != "" || err != nil || link.Host == "" || link.User != nil || (link.Scheme != "http" && link.Scheme != "https") {
+								continue
+							}
+							attribute.Val = link.String()
+							externalLink = true
 						}
 					}
 					if key == "src" || key == "poster" {
@@ -362,6 +371,9 @@ func Render(ctx context.Context, pageURL string, manifest *Manifest, markup []by
 					attributes = append(attributes, attribute)
 				}
 				child.Attr = attributes
+				if externalLink {
+					child.Attr = append(child.Attr, html.Attribute{Key: "target", Val: "_blank"}, html.Attribute{Key: "rel", Val: "noopener noreferrer"})
+				}
 				if tag == "style" {
 					for text := child.FirstChild; text != nil; text = text.NextSibling {
 						if text.Type == html.TextNode {

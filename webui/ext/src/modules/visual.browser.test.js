@@ -37,7 +37,7 @@ test(
           <link rel="stylesheet" href="https://other.example/style.css" media="screen">
           </head><body><input value="private" type="password"><textarea>private</textarea>
           <picture><source srcset="/selected.svg"><img src="/fallback.svg"></picture>
-          <img id="local"><div class="sample">Sample</div><script>window.active=true</script>
+          <img id="local"><div class="sample">Sample</div><a href="next">Live link</a><a href="#sample">Fragment</a><script>window.active=true</script>
           </body></html>`,
           });
         } else if (url.endsWith('.css')) {
@@ -74,6 +74,8 @@ test(
       assert.match(result.html, /prefers-color-scheme/);
       assert.doesNotMatch(result.html, /private|<script|must-not-capture|srcset=/);
       assert.match(result.html, /media="screen"/);
+      assert.match(result.html, /href="https:\/\/example.com\/next"/);
+      assert.match(result.html, /href="#sample"/);
       assert.match(result.html, /blob:hister-visual\/0/);
       assert.ok(
         result.resources.some(

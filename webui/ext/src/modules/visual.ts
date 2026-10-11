@@ -270,6 +270,10 @@ export async function captureVisual(expectedURL: string): Promise<VisualCapture 
   for (let index = 0; index < originals.length; index++) {
     const original = originals[index];
     const copy = copies[index];
+    if (original instanceof HTMLAnchorElement && original.hasAttribute('href')) {
+      const href = original.getAttribute('href')!;
+      copy.setAttribute('href', href.startsWith('#') ? href : original.href);
+    }
     if (original instanceof HTMLImageElement) {
       const asset = add(
         original.currentSrc || original.src,

@@ -75,7 +75,7 @@
     <iframe
       title="Visual archive"
       srcdoc={markup}
-      sandbox=""
+      sandbox="allow-popups allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
       class="min-h-0 w-full flex-1 border-0 bg-white"
     ></iframe>

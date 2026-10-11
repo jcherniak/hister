@@ -108,7 +108,7 @@ func TestLiveSVGValidation(t *testing.T) {
 }
 
 func TestReplayRewritesResourcesAndRemovesActiveContent(t *testing.T) {
-	markup := []byte(`<head><meta http-equiv="refresh" content="0;url=https://bad.example"><link rel="stylesheet" href="/style.css"></head><body onload="alert(1)"><script>alert(1)</script><iframe src="https://bad.example"></iframe><form action="https://bad.example"><input autofocus></form><img src="/image.png" srcset="https://bad.example/x 2x"><a href="https://bad.example">link</a><div style="background:url('/missing.png')"></div></body>`)
+	markup := []byte(`<head><meta http-equiv="refresh" content="0;url=https://bad.example"><link rel="stylesheet" href="/style.css"></head><body onload="alert(1)"><script>alert(1)</script><iframe src="https://bad.example"></iframe><form action="https://bad.example"><input autofocus></form><img src="/image.png" srcset="https://bad.example/x 2x"><a href="javascript:alert(1)">link</a><div style="background:url('/missing.png')"></div></body>`)
 	manifest := &Manifest{Resources: []Resource{{URL: "https://example.com/style.css", Kind: "css", MIME: "text/css", Key: "css"}, {URL: "https://example.com/image.png", Kind: "image", MIME: "image/png", Key: "image"}, {URL: "https://example.com/font.woff2", Kind: "font", MIME: "font/woff2", Key: "font"}}}
 	data := map[string][]byte{"css": []byte(`@media(max-width:800px){body{color:red}} @font-face{font-family:test;src:url('/font.woff2')} div{background:url('/image.png')}`), "image": pngImage(16, 16), "font": []byte("font")}
 	completed := 0
@@ -116,7 +116,7 @@ func TestReplayRewritesResourcesAndRemovesActiveContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"<script", "<iframe", "<form", "onload", "srcset", "autofocus", "https://bad.example", "https://example.com"} {
+	for _, forbidden := range []string{"<script", "<iframe", "<form", "onload", "srcset", "autofocus", "https://bad.example", "https://example.com", "javascript:"} {
 		if strings.Contains(result, forbidden) {
 			t.Errorf("contains %s", forbidden)
 		}
@@ -128,6 +128,53 @@ func TestReplayRewritesResourcesAndRemovesActiveContent(t *testing.T) {
 	}
 	if completed != 3 {
 		t.Errorf("completed %d", completed)
+	}
+}
+
+func TestReplayPreservesSafeLinks(t *testing.T) {
+	for _, test := range []struct {
+		href string
+		want string
+	}{
+		{"/next?x=1", "https://example.com/next?x=1"},
+		{"../next", "https://example.com/next"},
+		{"//other.example/next", "https://other.example/next"},
+		{"https://other.example/next#section", "https://other.example/next#section"},
+		{"#section", "#section"},
+		{"javascript:alert(1)", ""},
+		{"data:text/html,unsafe", ""},
+		{"file:///tmp/page", ""},
+		{"https://user:pass@example.com/", ""},
+	} {
+		t.Run(test.href, func(t *testing.T) {
+			markup := []byte(`<a href="` + test.href + `" target="_top" rel="opener" onclick="alert(1)" ping="https://tracker.example">link</a>`)
+			result, err := Render(context.Background(), "https://example.com/docs/page", &Manifest{}, markup, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, forbidden := range []string{"_top", "onclick", "ping=", `rel="opener"`} {
+				if strings.Contains(result, forbidden) {
+					t.Fatalf("active content remains: %s", result)
+				}
+			}
+			if test.want == "" {
+				if strings.Contains(result, "href=") || strings.Contains(result, "target=") {
+					t.Fatal(result)
+				}
+			} else if !strings.Contains(result, `href="`+test.want+`"`) {
+				t.Fatal(result)
+			} else if strings.HasPrefix(test.want, "#") {
+				if strings.Contains(result, "target=") {
+					t.Fatal(result)
+				}
+			} else if !strings.Contains(result, `target="_blank" rel="noopener noreferrer"`) {
+				t.Fatal(result)
+			}
+		})
+	}
+	result, err := Render(context.Background(), "https://example.com", &Manifest{}, []byte(`<svg><a href="https://other.example">link</a><use href="https://other.example/image.svg#icon"></use><use href="#icon"></use></svg>`), nil, nil)
+	if err != nil || strings.Contains(result, "https://other.example") || !strings.Contains(result, `href="#icon"`) {
+		t.Fatal(result, err)
 	}
 }
 

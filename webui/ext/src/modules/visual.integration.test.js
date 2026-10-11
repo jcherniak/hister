@@ -108,15 +108,20 @@ test(
           ),
         ),
       );
-      await page.route('https://visual.example.test/**', async (route) => {
+      await page.context().route('https://visual.example.test/**', async (route) => {
         const url = route.request().url();
         if (url === pageURL) {
           await route.fulfill({
             contentType: 'text/html',
             body: `<!doctype html><html><head>
-          <link rel="stylesheet" href="/main.css" media="screen"></head><body>
+          <base href="/docs/"><link rel="stylesheet" href="/main.css" media="screen"></head><body>
           <h1 id="marker">visualonlymarker</h1><img src="/image.svg"><img id="raster">
-          <script>window.archivedScript=true</script></body></html>`,
+          <a href="next">Live destination</a><a href="javascript:alert(1)">Unsafe link</a><script>window.archivedScript=true</script></body></html>`,
+          });
+        } else if (url.endsWith('/docs/next')) {
+          await route.fulfill({
+            contentType: 'text/html',
+            body: '<p>Original destination</p><script>window.destinationScript=true</script>',
           });
         } else if (url.endsWith('.css')) {
           await route.fulfill({
@@ -198,7 +203,9 @@ test(
       assert.match(complete.html, /@media/);
       assert.match(complete.html, /data:image\/svg\+xml;base64,/);
       assert.match(complete.html, /data:font\/woff2;base64,/);
-      await page.setContent('<iframe sandbox="" width="1200" height="800"></iframe>');
+      await page.setContent(
+        '<iframe sandbox="allow-popups allow-popups-to-escape-sandbox" width="1200" height="800"></iframe>',
+      );
       await page.locator('iframe').evaluate((iframe, html) => {
         iframe.srcdoc = html;
       }, complete.html);
@@ -237,6 +244,15 @@ test(
         'rgb(65, 43, 21)',
       );
       assert.equal(await frame.evaluate(() => window.archivedScript), undefined);
+      assert.equal(await frame.getByText('Unsafe link').getAttribute('href'), null);
+      const popupPromise = page.waitForEvent('popup');
+      await frame.getByRole('link', { name: 'Live destination' }).click();
+      const popup = await popupPromise;
+      await popup.waitForLoadState();
+      assert.equal(popup.url(), 'https://visual.example.test/docs/next');
+      assert.equal(await popup.evaluate(() => window.opener), null);
+      assert.equal(await popup.evaluate(() => window.destinationScript), true);
+      await popup.close();
       assert.match(JSON.stringify(search(normal, 'normalindexmarker')), /visual\.example\.test/);
       assert.doesNotMatch(
         JSON.stringify(search(normal, 'visualonlymarker')),

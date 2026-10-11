@@ -24,7 +24,7 @@ test('visual archive uses an isolated iframe and returns to readable content', a
   await expect(page.getByText('Saved article content')).toBeVisible();
   await page.getByRole('button', { name: 'Visual archive', exact: true }).click();
   const iframe = page.getByTitle('Visual archive', { exact: true });
-  await expect(iframe).toHaveAttribute('sandbox', '');
+  await expect(iframe).toHaveAttribute('sandbox', 'allow-popups allow-popups-to-escape-sandbox');
   await expect(
     page.frameLocator('iframe[title="Visual archive"]').getByText('Captured appearance'),
   ).toBeVisible();

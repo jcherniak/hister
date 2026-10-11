@@ -68,7 +68,7 @@ For each HTTP or HTTPS image, the server first tries the original URL. It uses a
 
 Live image requests do not use the browser cookie jar or forward browser credentials. Private, loopback, and reserved network addresses are blocked, including redirect destinations. Authenticated or private-network originals can therefore require the stored fallback. Opening a visual preview can contact the original public image hosts from the server.
 
-Replay uses a sandboxed iframe and a restrictive content security policy. Scripts, forms, nested frames, and external resource requests are disabled. Resources are inline, not persistent browser blob URLs. They use browser memory while displayed, and become eligible for release when the iframe is removed. The browser controls the exact release time.
+Replay uses a sandboxed iframe and a restrictive content security policy. Scripts, forms, nested frames, and external resource requests are disabled. HTTP and HTTPS links remain active and open the original destination in a separate tab. Fragment links stay inside the archive. Unsafe link schemes are removed. Resources are inline, not persistent browser blob URLs. They use browser memory while displayed, and become eligible for release when the iframe is removed. The browser controls the exact release time.
 
 ## Limits of Appearance Preservation
 
