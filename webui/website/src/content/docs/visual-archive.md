@@ -38,6 +38,8 @@ Use the matching new server and browser extension builds. An extension connected
 
 Capture saves the current DOM and available CSS rules, including runtime and adopted stylesheets. It keeps media queries, import conditions, and stylesheet media attributes. Unreadable cross-origin stylesheets are downloaded when possible. Referenced images, backgrounds, and fonts use a content-addressed resource store. Identical stored bytes share one file across pages.
 
+Fonts share the same resource store across all sites, even when their source URLs differ. Capture accepts font files served with generic binary content types. Archives captured before this support was added need another capture to save their missing fonts.
+
 The visual archive is stored in `data/visual/`, separately from `data/html/` and the search index. Each document has one latest visual snapshot. A new visual capture replaces the previous snapshot. A submission without a visual capture leaves the previous snapshot in place. The display shows its capture time. Historical text/HTML versions do not have visual snapshots.
 
 New normal HTML previews, visual HTML, and CSS use Zstandard. Existing gzip previews remain readable and are not converted. The portable Go encoder selects the profile nearest to Zstandard level 9; its output is not identical to the native `zstd -9` benchmark. Images and fonts do not receive another outer compression layer.

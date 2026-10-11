@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -100,6 +100,14 @@ test(
       browser = await chromium.launch({ headless: true });
       const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
       const pageURL = 'https://visual.example.test/captured';
+      const font = await readFile(
+        fileURLToPath(
+          new URL(
+            '../../../../node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2',
+            import.meta.url,
+          ),
+        ),
+      );
       await page.route('https://visual.example.test/**', async (route) => {
         const url = route.request().url();
         if (url === pageURL) {
@@ -113,8 +121,10 @@ test(
         } else if (url.endsWith('.css')) {
           await route.fulfill({
             contentType: 'text/css',
-            body: '@media(min-width:900px){#marker{color:rgb(12,34,56)}} @media(max-width:899px){#marker{color:rgb(65,43,21)}}',
+            body: '@font-face{font-family:ArchiveFont;src:url("/font.woff2")} #marker{font-family:ArchiveFont;font-weight:400} @media(min-width:900px){#marker{color:rgb(12,34,56)}} @media(max-width:899px){#marker{color:rgb(65,43,21)}}',
           });
+        } else if (url.endsWith('.woff2')) {
+          await route.fulfill({ contentType: 'binary/octet-stream', body: font });
         } else {
           await route.fulfill({
             contentType: 'image/svg+xml',
@@ -148,7 +158,8 @@ test(
         const capture = await module.captureVisual(location.href);
         return module.completeVisualCapture(capture);
       }, source);
-      assert.equal(visual.resources.filter((asset) => asset.data).length, 3);
+      assert.equal(visual.resources.filter((asset) => asset.data).length, 4);
+      assert.equal(visual.resources.find((asset) => asset.kind === 'font').mime, 'font/woff2');
       assert.ok(
         Buffer.from(visual.resources.find((asset) => asset.width === 640).data, 'base64').length >
           100000,
@@ -186,6 +197,7 @@ test(
       assert.doesNotMatch(complete.html, /<script/);
       assert.match(complete.html, /@media/);
       assert.match(complete.html, /data:image\/svg\+xml;base64,/);
+      assert.match(complete.html, /data:font\/woff2;base64,/);
       await page.setContent('<iframe sandbox="" width="1200" height="800"></iframe>');
       await page.locator('iframe').evaluate((iframe, html) => {
         iframe.srcdoc = html;
@@ -193,6 +205,13 @@ test(
       const frame = page.frames().find((frame) => frame.parentFrame());
       await frame.waitForFunction(() => document.images[0]?.naturalWidth === 100);
       await frame.waitForFunction(() => document.images[1]?.naturalWidth === 640);
+      assert.deepEqual(
+        await frame.evaluate(async () => {
+          const fonts = await document.fonts.load('16px ArchiveFont');
+          return fonts.map((font) => ({ family: font.family, status: font.status }));
+        }),
+        [{ family: 'ArchiveFont', status: 'loaded' }],
+      );
       assert.deepEqual(
         await frame.evaluate(() => [
           document.images[0].naturalWidth,

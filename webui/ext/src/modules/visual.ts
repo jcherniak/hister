@@ -146,7 +146,7 @@ async function readAsset(
       if (!format) return;
       asset.mime = format === 'eot' ? 'application/vnd.ms-fontobject' : `font/${format}`;
     }
-  } else if (asset.kind === 'font' && asset.mime === 'application/octet-stream') {
+  } else if (asset.kind === 'font' && /^(application|binary)\/octet-stream$/.test(asset.mime)) {
     const extension = new URL(asset.url).pathname.match(/\.(woff2?|ttf|otf)$/i)?.[1];
     if (!extension) return;
     asset.mime = `font/${extension.toLowerCase()}`;

@@ -20,7 +20,9 @@ func TestVisualStoreSharedResourcesAndRestart(t *testing.T) {
 	directory := t.TempDir()
 	store := NewStore(directory)
 	for _, id := range []string{"first", "second"} {
-		if err := store.Save(context.Background(), id, testCapture("body{color:red}")); err != nil {
+		capture := testCapture("body{color:red}")
+		capture.Resources[1].URL = "https://" + id + ".example/font.woff2"
+		if err := store.Save(context.Background(), id, capture); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -32,7 +34,7 @@ func TestVisualStoreSharedResourcesAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.HTMLKey != second.HTMLKey || first.Resources[0].Key != second.Resources[0].Key {
+	if first.HTMLKey != second.HTMLKey || first.Resources[0].Key != second.Resources[0].Key || first.Resources[1].Key != second.Resources[1].Key {
 		t.Fatal("shared content was not deduplicated")
 	}
 	css, err := store.ReadResource(first.Resources[0].Key, "css")
@@ -50,6 +52,9 @@ func TestVisualStoreSharedResourcesAndRestart(t *testing.T) {
 	}
 	if _, err := store.ReadResource(second.Resources[0].Key, "css"); err != nil {
 		t.Fatal("deletion removed a shared resource", err)
+	}
+	if _, err := store.ReadResource(second.Resources[1].Key, "font"); err != nil {
+		t.Fatal("deletion removed a font used by another site", err)
 	}
 	if err := store.Save(context.Background(), "second", testCapture("body{color:blue}")); err != nil {
 		t.Fatal(err)

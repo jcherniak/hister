@@ -204,3 +204,19 @@ test('legacy font MIME types normalize instead of rejecting an entire archive', 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('binary font responses normalize for offline replay', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response('font bytes', { headers: { 'content-type': 'binary/octet-stream' } });
+  try {
+    const capture = await completeVisualCapture({
+      html: '',
+      resources: [{ url: 'https://example.com/font.woff2', kind: 'font', mime: '', data: '' }],
+    });
+    assert.equal(capture.resources[0].mime, 'font/woff2');
+    assert.equal(Buffer.from(capture.resources[0].data, 'base64').toString(), 'font bytes');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
