@@ -393,6 +393,9 @@ func Render(ctx context.Context, pageURL string, manifest *Manifest, markup []by
 	if head != nil {
 		meta := &html.Node{Type: html.ElementNode, Data: "meta", Attr: []html.Attribute{{Key: "http-equiv", Val: "Content-Security-Policy"}, {Key: "content", Val: ReplayCSP}}}
 		head.InsertBefore(meta, head.FirstChild)
+		style := &html.Node{Type: html.ElementNode, Data: "style"}
+		style.AppendChild(&html.Node{Type: html.TextNode, Data: `picture:has(>img[src^="data:image/"]){opacity:1}`})
+		head.AppendChild(style)
 	}
 	output := limitedHTML{limit: 128 << 20, ctx: ctx}
 	if err = html.Render(&output, root); err != nil {

@@ -70,6 +70,8 @@ Live image requests do not use the browser cookie jar or forward browser credent
 
 Replay uses a sandboxed iframe and a restrictive content security policy. Scripts, forms, nested frames, and external resource requests are disabled. HTTP and HTTPS links remain active and open the original destination in a separate tab. Fragment links stay inside the archive. Unsafe link schemes are removed. Resources are inline, not persistent browser blob URLs. They use browser memory while displayed, and become eligible for release when the iframe is removed. The browser controls the exact release time.
 
+Replay sets the CSS opacity of picture containers with available inline images to 1. This replaces common JavaScript-controlled image fade-ins, which cannot finish in a scriptless archive. Explicit inline opacity, display, and visibility settings remain active. Other stylesheet rules can override this fallback when they have greater specificity.
+
 ## Limits of Appearance Preservation
 
 Source CSS does not freeze every computed style. Another viewport, color scheme, browser, font availability, or CSS feature can change the result. CSS conditions remain active by design. Missing resources can also change the appearance.

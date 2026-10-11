@@ -115,7 +115,9 @@ test(
             contentType: 'text/html',
             body: `<!doctype html><html><head>
           <base href="/docs/"><link rel="stylesheet" href="/main.css" media="screen"></head><body>
-          <h1 id="marker">visualonlymarker</h1><img src="/image.svg"><img id="raster">
+          <h1 id="marker">visualonlymarker</h1><picture class="fade"><img src="/image.svg"></picture><img id="raster">
+          <picture class="fade" style="opacity:0.5"><img src="/image.svg" alt="Deliberate transparency"></picture>
+          <picture class="fade" style="display:none"><img src="/image.svg" alt="Deliberately hidden"></picture>
           <a href="next">Live destination</a><a href="javascript:alert(1)">Unsafe link</a><script>window.archivedScript=true</script></body></html>`,
           });
         } else if (url.endsWith('/docs/next')) {
@@ -126,7 +128,7 @@ test(
         } else if (url.endsWith('.css')) {
           await route.fulfill({
             contentType: 'text/css',
-            body: '@font-face{font-family:ArchiveFont;src:url("/font.woff2")} #marker{font-family:ArchiveFont;font-weight:400} @media(min-width:900px){#marker{color:rgb(12,34,56)}} @media(max-width:899px){#marker{color:rgb(65,43,21)}}',
+            body: '.fade{opacity:0;transition:opacity 300ms ease-in-out} @font-face{font-family:ArchiveFont;src:url("/font.woff2")} #marker{font-family:ArchiveFont;font-weight:400} @media(min-width:900px){#marker{color:rgb(12,34,56)}} @media(max-width:899px){#marker{color:rgb(65,43,21)}}',
           });
         } else if (url.endsWith('.woff2')) {
           await route.fulfill({ contentType: 'binary/octet-stream', body: font });
@@ -212,6 +214,25 @@ test(
       const frame = page.frames().find((frame) => frame.parentFrame());
       await frame.waitForFunction(() => document.images[0]?.naturalWidth === 100);
       await frame.waitForFunction(() => document.images[1]?.naturalWidth === 640);
+      assert.equal(
+        await frame
+          .locator('picture')
+          .first()
+          .evaluate((element) => getComputedStyle(element).opacity),
+        '1',
+      );
+      assert.equal(
+        await frame
+          .getByAltText('Deliberate transparency')
+          .evaluate((element) => getComputedStyle(element.parentElement).opacity),
+        '0.5',
+      );
+      assert.equal(
+        await frame
+          .getByAltText('Deliberately hidden')
+          .evaluate((element) => getComputedStyle(element.parentElement).display),
+        'none',
+      );
       assert.deepEqual(
         await frame.evaluate(async () => {
           const fonts = await document.fonts.load('16px ArchiveFont');
