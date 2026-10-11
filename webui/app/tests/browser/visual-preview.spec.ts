@@ -246,3 +246,47 @@ test('open document information leaves the archive beside it at the md breakpoin
   const article = await page.locator('.preview-content').boundingBox();
   expect(article!.x).toBeGreaterThanOrEqual(info!.x + info!.width);
 });
+
+test('visual archive fills the available height without an empty lower area', async ({ page }) => {
+  await page.route('**/api/preview?**', (route) =>
+    route.fulfill({ json: { ...preview, visual_available: true, details: { type: 'web' } } }),
+  );
+  await page.route('**/api/visual-preview?**', (route) =>
+    route.fulfill({
+      contentType: 'application/x-ndjson',
+      body: '{"type":"complete","html":"<p>Full-height capture</p>"}\n',
+    }),
+  );
+  await page.goto(previewPath());
+  await page.getByRole('button', { name: 'Visual archive', exact: true }).click();
+  await expect(
+    page.frameLocator('iframe[title="Visual archive"]').getByText('Full-height capture'),
+  ).toBeVisible();
+  for (const size of [
+    { width: 375, height: 700 },
+    { width: 1280, height: 700 },
+    { width: 1440, height: 1100 },
+  ]) {
+    await page.setViewportSize(size);
+    for (const details of [true, false]) {
+      await page
+        .getByRole('button', {
+          name: details ? 'Show document details' : 'Hide document details',
+          exact: true,
+        })
+        .click();
+      await expect
+        .poll(async () => {
+          const body = await page.locator('.preview-body').boundingBox();
+          const frame = await page.getByTitle('Visual archive', { exact: true }).boundingBox();
+          return body && frame ? Math.abs(body.y + body.height - frame.y - frame.height) : Infinity;
+        })
+        .toBeLessThan(2);
+      expect(
+        await page
+          .getByTitle('Visual archive', { exact: true })
+          .evaluate((element) => element.getBoundingClientRect().height),
+      ).toBeGreaterThan(100);
+    }
+  }
+});

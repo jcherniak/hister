@@ -47,7 +47,7 @@
   });
 </script>
 
-<div class="flex h-[70vh] min-h-96 flex-col" data-testid="visual-preview">
+<div class="flex h-full min-h-0 flex-col" data-testid="visual-preview">
   {#if error}
     <div class="p-4"><PreviewLoadError message={error} onretry={() => retry++} /></div>
   {:else if !markup}

@@ -625,7 +625,14 @@
         </Button>
       </div>
     {/if}
-    <ScrollArea class="preview-body min-h-0 min-w-0 flex-1">
+    <ScrollArea
+      class="preview-body min-h-0 min-w-0 flex-1 {showVisual &&
+      visualAvailable &&
+      !viewingVersion &&
+      !showVersions
+        ? 'visual-body'
+        : ''}"
+    >
       {#if showVersions && versionsLoading}
         <p role="status" class="font-inter text-text-brand-muted p-4 text-sm">
           Loading previous versions…
@@ -793,6 +800,10 @@
 </div>
 
 <style>
+  :global(.visual-body [data-slot='scroll-area-viewport'] > div) {
+    height: 100%;
+  }
+
   .preview-panel-connected .preview-header {
     background: var(--card-surface);
   }
