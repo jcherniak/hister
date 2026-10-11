@@ -1297,7 +1297,8 @@ func serveRules(c *webContext) {
 		return
 	}
 	f := c.Request.PostForm
-	visualMode, status, visualErr := parseVisualSettings(c, f, rules)
+	visualRules := *rules
+	visualMode, status, visualErr := parseVisualSettings(c, f, &visualRules)
 	if visualErr != nil {
 		http.Error(c.Response, visualErr.Error(), status)
 		return
@@ -1326,6 +1327,7 @@ func serveRules(c *webContext) {
 		}
 		updates = append(updates, ruleUpdate{patterns: patterns, target: field.target})
 	}
+	rules.VisualSites = visualRules.VisualSites
 	for _, update := range updates {
 		if *update.target == nil {
 			*update.target = &config.Rule{ReStrs: make([]string, 0)}

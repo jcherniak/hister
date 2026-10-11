@@ -26,6 +26,7 @@ func TestVisualSettingsAPI(t *testing.T) {
 		{url.Values{"visual_mode": {"invalid"}}, http.StatusBadRequest},
 		{url.Values{"visual_sites": {`{"https://example.com":true}`}}, http.StatusBadRequest},
 		{url.Values{"visual_sites": {`{"example.com":"enabled"}`}}, http.StatusBadRequest},
+		{url.Values{"visual_sites": {`{"example.com":false}`}, "skip": {"["}}, http.StatusBadRequest},
 	} {
 		rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/api/rules", strings.NewReader(test.form.Encode()), headers)
 		if rec.Code != test.status {
