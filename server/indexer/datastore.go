@@ -103,6 +103,8 @@ func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(s
 		for _, path := range []string{dataFilePath(ds.dir, subdir, key), zstdDataFilePath(ds.dir, subdir, key)} {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
+			} else {
+				log.Debug().Str("key", key).Str("subdir", subdir).Msg("removed orphaned data file on document update")
 			}
 		}
 	}
