@@ -11,11 +11,13 @@ export function buildPreviewUrl(
   title: string,
   versionId?: number | null,
   documentId?: string,
+  view?: 'readable' | 'visual',
 ): string {
   const versionParam = versionId != null ? `&version=${versionId}` : '';
   const documentParam = documentId ? `&document_id=${encodeURIComponent(documentId)}` : '';
+  const viewParam = view ? `&view=${view}` : '';
   return resolve(
-    `preview?id=${encodeURIComponent(id)}${title ? '&title=' + encodeURIComponent(title) : ''}${versionParam}${documentParam}`,
+    `preview?id=${encodeURIComponent(id)}${title ? '&title=' + encodeURIComponent(title) : ''}${versionParam}${documentParam}${viewParam}`,
   );
 }
 
@@ -39,11 +41,12 @@ export function replacePreviewHistory(
   title: string,
   versionId?: number | null,
   documentId?: string,
+  view?: 'readable' | 'visual',
 ) {
   history.replaceState(
     { type: 'preview', id, title, versionId: versionId ?? null, documentId: documentId ?? '' },
     '',
-    buildPreviewUrl(id, title, versionId, documentId),
+    buildPreviewUrl(id, title, versionId, documentId, view),
   );
 }
 

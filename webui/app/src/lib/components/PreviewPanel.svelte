@@ -42,6 +42,7 @@
     onfullscreentoggle?: () => void;
     connected?: boolean;
     initialViewingVersionId?: number | null;
+    initialView?: 'readable' | 'visual';
     onviewingversionchange?: (id: number | null) => void;
   }
 
@@ -54,6 +55,7 @@
     onfullscreentoggle,
     connected = false,
     initialViewingVersionId = null,
+    initialView = 'readable',
     onviewingversionchange,
   }: Props = $props();
 
@@ -183,7 +185,8 @@
       extractorsLoaded = false;
       // untrack so that reading the prop here does not make the effect re-run on prop change.
       const versionId = isFirstLoad ? untrack(() => initialViewingVersionId) : null;
-      loadContent(u, hint, '', versionId, selectedDocumentId);
+      const view = isFirstLoad ? untrack(() => initialView) : 'readable';
+      loadContent(u, hint, '', versionId, selectedDocumentId, view);
     }
   });
 
@@ -202,9 +205,10 @@
     extractor: string = '',
     versionId: number | null = null,
     selectedDocumentId: string = documentId,
+    view: 'readable' | 'visual' = 'readable',
   ) {
     const requestId = ++contentRequestId;
-    retryPreview = () => loadContent(u, hint, extractor, versionId, selectedDocumentId);
+    retryPreview = () => loadContent(u, hint, extractor, versionId, selectedDocumentId, view);
     loading = true;
     previewError = '';
     content = '';
@@ -241,6 +245,7 @@
       templateData = template === 'video' ? parseTemplateData(data.content) : null;
       content = template === 'video' ? '' : data.content || '<p>No content available</p>';
       visualAvailable = data.visual_available === true && versionId === null;
+      showVisual = visualAvailable && view === 'visual';
       // Always update metadata (server always returns current doc's metadata regardless of version).
       title = data.title || hint;
       added = data.added ?? null;
@@ -596,6 +601,28 @@
             showVisual = true;
           }}>Visual archive</Button
         >
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          class="ml-auto shrink-0"
+          href={buildPreviewUrl(
+            url,
+            title || hintTitle,
+            viewingVersion?.id,
+            documentId,
+            showVisual ? 'visual' : 'readable',
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={showVisual
+            ? 'Open visual archive in a new tab'
+            : 'Open readable view in a new tab'}
+          aria-label={showVisual
+            ? 'Open visual archive in a new tab'
+            : 'Open readable view in a new tab'}
+        >
+          <ExternalLink class="size-4" />
+        </Button>
       </div>
     {/if}
     <ScrollArea class="preview-body min-h-0 min-w-0 flex-1">

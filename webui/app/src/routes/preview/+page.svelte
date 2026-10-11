@@ -11,6 +11,7 @@
   let documentId = $state('');
   let docTitle = $state('');
   let panelVersionId = $state<number | null>(null);
+  let initialView = $state<'readable' | 'visual'>('readable');
 
   function readParams() {
     const params = new URLSearchParams(window.location.search);
@@ -19,6 +20,7 @@
     docTitle = params.get('title') || '';
     const v = params.get('version');
     panelVersionId = v ? parseInt(v, 10) || null : null;
+    initialView = params.get('view') === 'visual' ? 'visual' : 'readable';
   }
 
   onMount(() => {
@@ -40,9 +42,10 @@
       hintTitle={docTitle}
       fullscreen={true}
       initialViewingVersionId={panelVersionId}
+      {initialView}
       onviewingversionchange={(id) => {
         panelVersionId = id;
-        replacePreviewHistory(docUrl, docTitle, id, documentId);
+        replacePreviewHistory(docUrl, docTitle, id, documentId, initialView);
       }}
       onclose={() => {
         try {

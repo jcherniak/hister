@@ -63,6 +63,55 @@ test('historical previews do not offer the latest visual archive', async ({ page
   await expect(page.getByRole('button', { name: 'Visual archive', exact: true })).toHaveCount(0);
 });
 
+test('new-tab action opens the selected view and preserves the document', async ({
+  page,
+  context,
+}) => {
+  await mockAPI(context);
+  await context.route('**/api/preview?**', (route) =>
+    route.fulfill({ json: { ...preview, visual_available: true } }),
+  );
+  await context.route('**/api/visual-preview?**', (route) =>
+    route.fulfill({
+      contentType: 'application/x-ndjson',
+      body: '{"type":"complete","html":"<p>New-tab capture</p>"}\n',
+    }),
+  );
+  await page.goto(previewPath());
+  for (const view of ['visual', 'readable'] as const) {
+    await page
+      .getByRole('button', { name: view === 'visual' ? 'Visual archive' : 'Readable', exact: true })
+      .click();
+    const link = page.getByRole('link', {
+      name:
+        view === 'visual' ? 'Open visual archive in a new tab' : 'Open readable view in a new tab',
+    });
+    const popupPromise = page.waitForEvent('popup');
+    await link.click();
+    const popup = await popupPromise;
+    await expect.poll(() => new URL(popup.url()).searchParams.get('view')).toBe(view);
+    const params = new URL(popup.url()).searchParams;
+    expect(params.get('id')).toBe(original);
+    expect(params.get('document_id')).toBe('document-1');
+    if (view === 'visual') {
+      await expect(
+        popup.frameLocator('iframe[title="Visual archive"]').getByText('New-tab capture'),
+      ).toBeVisible();
+    } else {
+      await expect(popup.getByText('Saved article content')).toBeVisible();
+      await expect(popup.getByTitle('Visual archive', { exact: true })).toHaveCount(0);
+    }
+    await popup.close();
+  }
+});
+
+test('a visual-view URL falls back to readable content without a capture', async ({ page }) => {
+  await page.route('**/api/preview?**', (route) => route.fulfill({ json: preview }));
+  await page.goto(`${previewPath()}&view=visual`);
+  await expect(page.getByText('Saved article content')).toBeVisible();
+  await expect(page.getByTitle('Visual archive', { exact: true })).toHaveCount(0);
+});
+
 test('visual archive renders inline image dimensions and conditional CSS', async ({ page }) => {
   const image = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
