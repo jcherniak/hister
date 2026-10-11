@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -102,7 +101,7 @@ func (c *Config) VisualEnabled(pageURL string, rules *Rules) bool {
 		return false
 	}
 	if rules == nil {
-		rules = c.RulesSnapshot()
+		rules = c.Rules
 	}
 	if rules != nil && rules.IsSkip(pageURL) {
 		return false
@@ -162,49 +161,6 @@ func (c *Config) loadVisualSettings() error {
 	c.visualMu.Lock()
 	c.visualModeOverride = settings.Mode
 	c.visualMu.Unlock()
-	return nil
-}
-
-func (c *Config) RulesSnapshot() *Rules {
-	c.rulesMu.RLock()
-	defer c.rulesMu.RUnlock()
-	return cloneRules(c.Rules)
-}
-
-func cloneRules(rules *Rules) *Rules {
-	if rules == nil {
-		rules = &Rules{}
-	}
-	result := &Rules{Aliases: maps.Clone(rules.Aliases), VisualSites: maps.Clone(rules.VisualSites)}
-	for _, pair := range []struct {
-		source *Rule
-		target **Rule
-	}{
-		{rules.Allow, &result.Allow}, {rules.Skip, &result.Skip}, {rules.Priority, &result.Priority}, {rules.Versioning, &result.Versioning},
-	} {
-		*pair.target = &Rule{ReStrs: []string{}}
-		if pair.source != nil {
-			(*pair.target).ReStrs = append([]string{}, pair.source.ReStrs...)
-			(*pair.target).re = pair.source.re
-		}
-	}
-	if result.Aliases == nil {
-		result.Aliases = make(Aliases)
-	}
-	return result
-}
-
-func (c *Config) SaveRulesSnapshot(rules *Rules) error {
-	rules = cloneRules(rules)
-	if err := rules.Compile(); err != nil {
-		return err
-	}
-	c.rulesMu.Lock()
-	defer c.rulesMu.Unlock()
-	if err := writeJSONAtomic(c.RulesPath(), rules); err != nil {
-		return err
-	}
-	c.Rules = rules
 	return nil
 }
 

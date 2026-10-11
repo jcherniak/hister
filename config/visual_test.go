@@ -76,16 +76,15 @@ func TestVisualModePersistenceAndHardDisable(t *testing.T) {
 	}
 }
 
-func TestVisualRulesSnapshots(t *testing.T) {
+func TestVisualRulesPersistence(t *testing.T) {
 	cfg := CreateDefaultConfig()
 	cfg.App.Directory = t.TempDir()
-	if err := cfg.SaveRulesSnapshot(&Rules{VisualSites: map[string]bool{"example.com": true}}); err != nil {
+	cfg.Rules = &Rules{VisualSites: map[string]bool{"example.com": true}}
+	if err := cfg.SaveRules(); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := cfg.RulesSnapshot()
-	snapshot.VisualSites["example.com"] = false
 	if !cfg.VisualEnabled("https://example.com", nil) {
-		t.Fatal("snapshot changed live rules")
+		t.Fatal("saved visual site setting was not loaded")
 	}
 	var workers sync.WaitGroup
 	for worker := 0; worker < 4; worker++ {
@@ -98,9 +97,6 @@ func TestVisualRulesSnapshots(t *testing.T) {
 				}
 				_ = cfg.VisualMode()
 				_ = cfg.VisualEnabled("https://example.com", nil)
-				if err := cfg.SaveRulesSnapshot(snapshot); err != nil {
-					t.Error(err)
-				}
 			}
 		}()
 	}

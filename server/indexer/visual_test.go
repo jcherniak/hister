@@ -96,7 +96,7 @@ func TestVisualArchiveSurvivesReindex(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := idx.visual
-	if err := idx.Reindex(cfg.RulesSnapshot(), false, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords, nil); err != nil {
+	if err := idx.Reindex(cfg.Rules, false, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords, nil); err != nil {
 		t.Fatal(err)
 	}
 	if idx.visual != store || idx.visualConfig != cfg {

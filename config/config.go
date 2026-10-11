@@ -48,7 +48,6 @@ type Config struct {
 	VisualArchive            VisualArchive         `yaml:"visual_archive" mapstructure:"visual_archive"`
 	visualMu                 sync.RWMutex
 	visualModeOverride       string
-	rulesMu                  sync.RWMutex
 	secretKey                []byte
 	parsedBaseURL            *url.URL
 	usesDefaultBaseURL       bool
@@ -1172,7 +1171,29 @@ func (c *Config) LoadRules() error {
 }
 
 func (c *Config) SaveRules() error {
-	return c.SaveRulesSnapshot(c.RulesSnapshot())
+	f, err := os.OpenFile(c.RulesPath(), os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	if c.Rules == nil {
+		c.Rules = &Rules{
+			Allow:      &Rule{ReStrs: make([]string, 0)},
+			Skip:       &Rule{ReStrs: make([]string, 0)},
+			Priority:   &Rule{ReStrs: make([]string, 0)},
+			Versioning: &Rule{ReStrs: make([]string, 0)},
+			Aliases:    make(Aliases),
+		}
+	}
+	e := json.NewEncoder(f)
+	e.SetIndent("", "  ")
+	if err = e.Encode(c.Rules); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return c.LoadRules()
 }
 
 func (r *Rules) IsPriority(s string) bool {

@@ -432,6 +432,10 @@ func serveConfig(c *webContext) {
 	for name := range c.Config.Server.OAuth {
 		oauthProviders = append(oauthProviders, name)
 	}
+	var visualSites map[string]bool
+	if rules := c.effectiveRules(); rules != nil {
+		visualSites = rules.VisualSites
+	}
 	c.JSON(configResponse{
 		BaseURL:              c.Config.BaseURL(""),
 		BasePath:             c.Config.BasePathPrefix(),
@@ -459,7 +463,7 @@ func serveConfig(c *webContext) {
 		MaxBatchBodyBytes:    c.Config.Server.MaxBatchBodyBytes(),
 		Search:               searchschema.CapabilitiesDefinition(),
 		VisualMode:           c.Config.VisualMode(),
-		VisualSites:          c.effectiveRules().VisualSites,
+		VisualSites:          visualSites,
 	})
 }
 
@@ -1341,7 +1345,7 @@ func serveRules(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
+		if err := c.Config.SaveRules(); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
 			serve500(c)
 			return
@@ -1927,7 +1931,7 @@ func serveAddAlias(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
+		if err := c.Config.SaveRules(); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
 			serve500(c)
 			return
@@ -1957,7 +1961,7 @@ func serveDeleteAlias(c *webContext) {
 		}
 		c.userRules = rules
 	} else {
-		if err := c.Config.SaveRulesSnapshot(rules); err != nil {
+		if err := c.Config.SaveRules(); err != nil {
 			log.Error().Err(err).Msg("failed to save rules")
 			serve500(c)
 			return

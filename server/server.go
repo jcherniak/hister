@@ -84,7 +84,7 @@ func (c *webContext) effectiveRules() *config.Rules {
 	if c.Config.App.UserHandling && c.userRules != nil {
 		return c.userRules
 	}
-	return c.Config.RulesSnapshot()
+	return c.Config.Rules
 }
 
 func init() {
