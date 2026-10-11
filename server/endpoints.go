@@ -1255,11 +1255,11 @@ func serveRules(c *webContext) {
 	rules := c.effectiveRules()
 	if m == http.MethodGet {
 		type rulesResponse struct {
-			Allow                     []string          `json:"allow"`
-			Skip                      []string          `json:"skip"`
-			Priority                  []string          `json:"priority"`
-			Versioning                []string          `json:"versioning"`
-			Aliases                   map[string]string `json:"aliases"`
+			Allow      []string          `json:"allow"`
+			Skip       []string          `json:"skip"`
+			Priority   []string          `json:"priority"`
+			Versioning []string          `json:"versioning"`
+			Aliases    map[string]string `json:"aliases"`
 			VisualMode                string            `json:"visual_mode"`
 			VisualSites               map[string]bool   `json:"visual_sites"`
 			VisualCanConfigureInstall bool              `json:"visual_can_configure_install"`

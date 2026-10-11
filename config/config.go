@@ -215,11 +215,11 @@ type Hotkeys struct {
 }
 
 type Rules struct {
-	Allow       *Rule           `json:"allow"`
-	Skip        *Rule           `json:"skip"`
-	Priority    *Rule           `json:"priority"`
-	Versioning  *Rule           `json:"versioning"`
-	Aliases     Aliases         `json:"aliases"`
+	Allow      *Rule   `json:"allow"`
+	Skip       *Rule   `json:"skip"`
+	Priority   *Rule   `json:"priority"`
+	Versioning *Rule   `json:"versioning"`
+	Aliases    Aliases `json:"aliases"`
 	VisualSites map[string]bool `json:"visual_sites,omitempty"`
 }
 
