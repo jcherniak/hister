@@ -39,6 +39,7 @@ type Config struct {
 	Indexer                  Indexer               `yaml:"indexer" mapstructure:"indexer"`
 	Crawler                  CrawlerConfig         `yaml:"crawler" mapstructure:"crawler"`
 	SemanticSearch           SemanticSearch        `yaml:"semantic_search" mapstructure:"semantic_search"`
+	Compression              Compression           `yaml:"compression" mapstructure:"compression"`
 	Hotkeys                  Hotkeys               `yaml:"hotkeys" mapstructure:"hotkeys"`
 	TUI                      TUI                   `yaml:"-" mapstructure:"tui"`
 	SensitiveContentPatterns map[string]string     `yaml:"sensitive_content_patterns" mapstructure:"sensitive_content_patterns"`
@@ -648,6 +649,7 @@ func CreateDefaultConfig() *Config {
 			"ssh_private_key":     `-----BEGIN OPENSSH PRIVATE KEY-----`,
 			"pgp_private_key":     `-----BEGIN PGP PRIVATE KEY BLOCK-----`,
 		},
+		Compression: Compression{Algorithm: DefaultCompressionAlgorithm},
 		SemanticSearch: SemanticSearch{
 			Enable:                       false,
 			EmbeddingEndpoint:            "http://localhost:11434/v1/embeddings",
@@ -685,6 +687,9 @@ func parseConfig(rawConfig []byte) (*Config, error) {
 }
 
 func (c *Config) validateBasic() error {
+	if err := c.Compression.Validate(); err != nil {
+		return err
+	}
 	if _, _, err := c.Server.ListenEndpoint(); err != nil {
 		return err
 	}

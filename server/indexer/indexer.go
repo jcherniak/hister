@@ -415,6 +415,9 @@ func handleBleveAsyncError(err error, path string) {
 
 // New creates an independent indexer instance from cfg.
 func New(cfg *config.Config) (*Indexer, error) {
+	if err := cfg.Compression.Validate(); err != nil {
+		return nil, err
+	}
 	sp := make([]string, 0, len(cfg.SensitiveContentPatterns))
 	for _, v := range cfg.SensitiveContentPatterns {
 		sp = append(sp, v)
@@ -430,6 +433,13 @@ func New(cfg *config.Config) (*Indexer, error) {
 		return nil, fmt.Errorf("store initial embedding configuration metadata: %w", err)
 	}
 	idx.disablePreviews = cfg.App.DisablePreviews
+	idx.data.algorithm = cfg.Compression.HTMLAlgorithm()
+	if cfg.Compression.RecompressExisting {
+		if _, err := idx.data.recompress(idx.embedCtx, idx.data.algorithm); err != nil {
+			idx.Close()
+			return nil, fmt.Errorf("recompress historical HTML: %w", err)
+		}
+	}
 	idx.userHandling = cfg.App.UserHandling
 	idx.directories = cfg.Indexer.Directories
 	idx.maxFileSize = defaultMaxFileSize
@@ -960,6 +970,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	replacement.userHandling = idx.userHandling
 	replacement.sensitivePattern = idx.sensitivePattern
 	replacement.semanticConfig = idx.semanticConfig
+	replacement.data.algorithm = idx.data.algorithm
 	idx.adopt(replacement)
 	// Restore settings that are not part of the index state.
 	idx.disablePreviews = tmpIdx.disablePreviews

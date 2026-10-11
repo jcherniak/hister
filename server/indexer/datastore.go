@@ -9,7 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/asciimoo/hister/server/compression"
 
 	"github.com/rs/zerolog/log"
 )
@@ -30,10 +33,12 @@ const (
 type dataStore struct {
 	dir    string
 	shards [256]sync.RWMutex
+
+	algorithm string
 }
 
 func newDataStore(dir string) *dataStore {
-	return &dataStore{dir: dir}
+	return &dataStore{dir: dir, algorithm: compression.Gzip}
 }
 
 // shard returns the mutex responsible for key, using the first byte of the
@@ -72,7 +77,7 @@ func (ds *dataStore) write(subdir string, data []byte) (string, error) {
 	mu := ds.shard(key)
 	mu.Lock()
 	defer mu.Unlock()
-	if err := writeFileLocked(ds.dir, subdir, key, data); err != nil {
+	if err := writeFileLocked(ds.dir, subdir, key, data, ds.algorithm); err != nil {
 		return "", err
 	}
 	return key, nil
@@ -97,16 +102,17 @@ func (ds *dataStore) deleteIfOrphaned(field, subdir, key string, refCount func(s
 	mu.Lock()
 	defer mu.Unlock()
 	if refCount(field, key) == 0 {
-		path := dataFilePath(ds.dir, subdir, key)
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
-		} else {
-			log.Debug().Str("key", key).Str("subdir", subdir).Msg("removed orphaned data file on document update")
+		for _, path := range []string{dataFilePath(ds.dir, subdir, key), zstdDataFilePath(ds.dir, subdir, key)} {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
+			} else {
+				log.Debug().Str("key", key).Str("subdir", subdir).Msg("removed orphaned data file on document update")
+			}
 		}
 	}
 }
 
-// cleanup removes unreferenced .gz files under subdir. For each candidate file
+// cleanup removes unreferenced .gz and .zst files under subdir. For each candidate file
 // the per-key shard lock is acquired and refCount is called while holding the
 // lock, so the check and the removal are atomic with respect to concurrent
 // writes or deletes of the same key
@@ -121,7 +127,8 @@ func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string)
 			log.Warn().Err(err).Str("path", path).Msg("error accessing data file during cleanup")
 			return nil
 		}
-		if info.IsDir() || filepath.Ext(path) != ".gz" {
+		ext := filepath.Ext(path)
+		if info.IsDir() || (ext != ".gz" && ext != ".zst") {
 			return nil
 		}
 		// Reconstruct the key from the 3-level directory prefix + filename.
@@ -135,7 +142,10 @@ func (ds *dataStore) cleanup(field, subdir string, refCount func(string, string)
 			return nil
 		}
 		// parts[3] is the filename with .gz suffix; strip it to get the hash tail.
-		key := parts[0] + parts[1] + parts[2] + parts[3][:len(parts[3])-3]
+		key := parts[0] + parts[1] + parts[2] + strings.TrimSuffix(parts[3], ext)
+		if !validDataKey(key) {
+			return nil
+		}
 		mu := ds.shard(key)
 		mu.Lock()
 		if refCount(field, key) == 0 {
@@ -158,13 +168,23 @@ func dataFilePath(dataDir, subdir, key string) string {
 	return filepath.Join(dataDir, subdir, key[0:2], key[2:4], key[4:6], key[6:]+".gz")
 }
 
-// writeFileLocked writes data compressed with gzip to the path derived from
+// writeFileLocked writes compressed data to the path derived from
 // key. If the file already exists it is left unchanged (same hash = same
 // content). The caller must hold the relevant shard lock.
-func writeFileLocked(dataDir, subdir, key string, data []byte) error {
+func writeFileLocked(dataDir, subdir, key string, data []byte, algorithm string) error {
 	fpath := dataFilePath(dataDir, subdir, key)
 	if _, err := os.Stat(fpath); err == nil {
 		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if subdir == htmlSubdir {
+		if _, err := os.Stat(zstdDataFilePath(dataDir, subdir, key)); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		return writeHTMLLocked(dataDir, key, data, algorithm)
 	}
 	if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -191,6 +211,14 @@ func writeFileLocked(dataDir, subdir, key string, data []byte) error {
 // readFileLocked decompresses and returns the data file identified by key.
 // The caller must hold the relevant shard lock.
 func readFileLocked(dataDir, subdir, key string) ([]byte, error) {
+	if !validDataKey(key) {
+		return nil, fmt.Errorf("invalid data key")
+	}
+	if data, err := os.ReadFile(zstdDataFilePath(dataDir, subdir, key)); err == nil {
+		return compression.Decompress(compression.Zstd, data, compression.MaxTextBytes)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	fpath := dataFilePath(dataDir, subdir, key)
 	f, err := os.Open(fpath)
 	if err != nil {
@@ -210,9 +238,12 @@ func readFileLocked(dataDir, subdir, key string) ([]byte, error) {
 			log.Warn().Err(cerr).Str("path", fpath).Msg("failed to close gzip reader")
 		}
 	}()
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.LimitReader(r, compression.MaxTextBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("decompress data: %w", err)
+	}
+	if len(data) > compression.MaxTextBytes {
+		return nil, compression.ErrSizeLimit
 	}
 	return data, nil
 }
